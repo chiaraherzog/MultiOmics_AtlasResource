@@ -1,0 +1,666 @@
+---
+title: "Figure 1 | Overview"
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+::: {.panel-tabset}
+
+# Figure
+
+![](figures/Figure-1-Overview.png)
+
+# Code
+
+```{r libs, eval = F}
+packages <- c('ggplot2', 'here', 'dplyr', 'patchwork', 'gghalves', 'ggtext',
+              'ggdist')
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+here::i_am('panels-fig1.qmd')
+
+# Load data
+load("data/data_raw.Rdata")
+
+# Set up colours
+cols <- c("#1b69a1","#5f70a8", "#826c9b", "#bd647d", "#ec6669", "#f39668", "#71b5a9")
+names(cols) <- c("blood", "buccal", "saliva", "cervical", "urine", "faecal", "skin")
+cols2 <- c("#1b69a1", "#48a0af", "#71b5a9", "#ec6669", "#f39668", "#bd647d", "#832c9b", "#5f70a8")
+```
+
+## Total samples per biospecimen
+
+```{r}
+x <- as.data.frame(sampleMap(data))
+
+samples_total <- x |> dplyr::filter(assay %in% c("Blood haemogram",
+                                     "Skin histology and transepidermal water loss assay",
+                                     "Saliva nuclear magnetic resonance",
+                                     "Urine nuclear magnetic resonance",
+                                     "Stool microbiome: families",
+                                     "Composite methylation scores: buccal",
+                                     "Composite methylation scores: cervical")) |> 
+  dplyr::mutate(visitId = substr(primary, 5, nchar(primary))) |> 
+  dplyr::mutate(assay = case_when(grepl("Blood h", assay) ~ "blood",
+                                  grepl("Saliva", assay) ~ "saliva",
+                                  grepl("Urine", assay) ~ "urine",
+                                  grepl("Stool", assay) ~ "faecal",
+                                  grepl("cervical", assay) ~ "cervical",
+                                  grepl("buccal", assay) ~ "buccal",
+                                  grepl("Skin", assay) ~ "skin"),
+                assay = factor(assay, levels = c("blood", "buccal", "saliva", "cervical", "urine", "faecal", "skin"))) |> 
+  dplyr::filter(!visitId %in% c("M12", "M18"))
+
+total_per_type <- samples_total |> dplyr::group_by(assay) |> 
+  dplyr::count()
+
+total_per_type_plot <- total_per_type |> 
+  dplyr::mutate(assay = factor(assay, levels = rev(levels(assay)))) |> 
+  ggplot(aes(y = assay,
+             x = n,
+             fill = assay)) +
+  geom_col() +
+  geom_text(aes(label = paste0(n),
+                x = 130),
+            size = 2.8,
+            colour = 'white') +
+  scale_fill_manual(values = cols) +
+  theme_bw() +
+  theme(legend.position = 'none',
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        panel.grid = element_blank(),
+        aspect.ratio= 4) +
+  labs(x = '',
+       y = '') +
+  scale_x_continuous(breaks = c(0, 300, 600),expand = c(0,  0),
+                     limits = c(0, 700))
+
+pdf(file = 'figures/panels/1-per-sample-type.pdf',
+    width = 1, 
+    height = 3)
+print(total_per_type_plot)
+dev.off()
+```
+
+## Per visit
+
+```{r}
+# Total per visit
+total_per_visit <- samples_total |> dplyr::group_by(visitId, assay) |> 
+  dplyr::count()
+
+total_per_visit_plot <- total_per_visit |> 
+  dplyr::filter(visitId %in% c("M0", "M2", "M4", "M6")) |> 
+  dplyr::mutate(n2 = -n) |> 
+  ggplot(aes(x = visitId,
+             y = n2,
+             fill = assay)) +
+  geom_col(position = position_dodge2(preserve = "single",padding = 0.3),
+           width = 0.6)+
+  scale_fill_manual(values = cols) +
+  theme_bw() +
+  theme(legend.position = 'none',
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        panel.grid = element_blank()) +
+  labs(x = '',
+       y = '') +
+  scale_y_continuous(breaks = c(-150, -75, 0),
+                     limits = c(-170, 0),
+                     labels = c(150, 75, 0))
+
+pdf(file = 'figures/panels/1-per-visit.pdf',
+    width = 3, 
+    height = 0.75)
+print(total_per_visit_plot)
+dev.off()
+```
+
+## Omics per sample type
+
+```{r}
+# Omics per sample type
+omics <- x |> dplyr::filter(assay %in% c("Blood haemogram",
+                                                 "Skin histology and transepidermal water loss assay",
+                                                 "Saliva nuclear magnetic resonance",
+                                                 "Urine nuclear magnetic resonance",
+                                                 "Saliva microbiome: families",
+                                                 "Stool microbiome: families",
+                                         "Flow cytometry: white blood cell staining",
+                                                 "Composite methylation scores: blood",
+                                                 "Composite methylation scores: buccal",
+                                                 "Composite methylation scores: cervical")) |> 
+  dplyr::mutate(visitId = substr(primary, 5, nchar(primary))) |> 
+  dplyr::mutate(sampletype = case_when(grepl("Blood|blood|Flow", assay) ~ "blood",
+                                  grepl("Saliva", assay) ~ "saliva",
+                                  grepl("Urine", assay) ~ "urine",
+                                  grepl("Stool", assay) ~ "faecal",
+                                  grepl("cervical", assay) ~ "cervical",
+                                  grepl("buccal", assay) ~ "buccal",
+                                  grepl("Skin", assay) ~ "skin"),
+                sampletype = factor(sampletype, levels = c("blood", "buccal", "saliva", "cervical", "urine", "faecal", "skin")),
+                assay = case_when(grepl("microbiome", assay) ~ "microbiome",
+                                  grepl("nuclear", assay) ~ "NMR",
+                                  grepl("methylation", assay) ~ "methylation",
+                                  grepl("haemo", assay) ~ "routine",
+                                  grepl("Flow", assay) ~ "Immune profiling",
+                                  grepl("Skin", assay) ~ "histology"),
+                assay = factor(assay, levels = c("routine", "methylation", "NMR", "microbiome", "Immune profiling", "histology"))) |> 
+  dplyr::filter(!visitId %in% c("M12", "M18"))
+
+# omics_per_sample <- omics |> 
+#   dplyr::group_by(assay, sampletype) |> 
+#   dplyr::count()
+# 
+# omics_per_sample_plot <- omics_per_sample |> 
+#   dplyr::mutate(n2 = -n) |> 
+#   ggplot(aes(x = assay,
+#              y = n2,
+#              fill = sampletype)) +
+#   geom_col(
+#     position = position_dodge2(preserve = 'single', padding = 0.3),
+#     width = 0.45
+#     )  +
+#   scale_fill_manual(values = cols) +
+#   theme_bw() +
+#   theme(legend.position = 'none',
+#         axis.ticks.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         panel.grid = element_blank()) +
+#   labs(x = '',
+#        y = '')
+# 
+# pdf(file = 'figures/panels/1-per-omic.pdf',
+#     width = 4.2, 
+#     height = 0.75)
+# print(omics_per_sample_plot)
+# dev.off()
+
+## Stacked version
+omics_per_sample_plot_stack <- omics_per_sample |> 
+  dplyr::mutate(n2 = -n) |> 
+  ggplot(aes(x = assay,
+             y = n2,
+             fill = sampletype)) +
+  geom_col(
+    width = 0.4,
+    color = 'white'
+  )  +
+  scale_fill_manual(values = cols) +
+  theme_bw() +
+  theme(legend.position = 'none',
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        panel.grid = element_blank()) +
+  labs(x = '',
+       y = '') +
+  scale_y_continuous(breaks = c(-1700, -800, 0),
+                     limits = c(-1700, 0),
+                     labels = c(1700, 800, 0))
+
+pdf(file = 'figures/panels/1-per-omic_stack.pdf',
+    width = 4.2, 
+    height = 1.5)
+print(omics_per_sample_plot_stack)
+dev.off()
+```
+
+## Baseline characteristics
+
+```{r}
+x <- as.data.frame(colData(data)) |> 
+  dplyr::filter(visitId == 'M0') |> 
+  dplyr::mutate(group = 'all') |> 
+  dplyr::mutate(smoking_history = ifelse(interventionId == 'S',
+                                         'current smoker',
+                                         ifelse(smoking_ever == 'yes',
+                                                'former smoker',
+                                                ifelse(smoking_ever == 'no',
+                                                       'never smoker',
+                                                       'unknown'))))
+
+x_by_group <- x |> dplyr::mutate(group = ifelse(interventionId == 'S', 'S', 'I'))
+# x_by_group <- x |> dplyr::mutate(group = interventionId)
+
+x <- rbind(x, x_by_group) |> 
+  dplyr::add_row(group = 'spacer',
+                 age_at_consent = NA) |> 
+  dplyr::mutate(group = factor(group, levels = c("all", "spacer", "I",
+                                                 # "K",
+                                                 "S")))
+
+age_plot <- x |> 
+  ggplot(aes(x = group,
+             y = age_at_consent)) +
+  stat_slabinterval(side = 'left',
+                    width = 0.3,
+                    aes(fill = group),
+                    alpha = 0.4) +
+  # geom_half_boxplot(errorbar.length = 0,
+  #                   aes(fill = group),
+  #                   alpha = 0.5,
+  #                   width = 0.8,
+  #                   nudge = 0.1) +
+  geom_half_point(size = 0.8,
+                  alpha = 0.7,
+                  aes(colour = group),
+                  width = 0.8,
+                  range_scale = 0.5) +
+  geom_vline(xintercept = 2,
+             linetype = 'dashed') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        plot.subtitle = element_markdown()) +
+  scale_x_discrete(
+    # labels = c("all", "", "I", "S")
+    labels = c("all", "", "I", "K", "S")
+                   ) +
+  labs(x = '',
+       y = '',
+       subtitle = 'Age at consent (years)') +
+  scale_colour_manual(values = c("grey20",
+                                 cols2[2],
+                                 cols2[7],
+                                 cols2[1]),
+                      aesthetics = c("fill", "colour"),
+                      guide = 'none') 
+
+
+bmi_plot <- x |> 
+  ggplot(aes(x = group,
+             y = bmi_at_consent)) +
+  stat_slabinterval(side = 'left',
+                    width = 0.3,
+                    aes(fill = group),
+                    alpha = 0.4) +
+  # geom_half_boxplot(errorbar.length = 0,
+  #                   aes(fill = group),
+  #                   alpha = 0.5,
+  #                   width = 0.8,
+  #                   nudge = 0.1) +
+  geom_half_point(size = 0.8,
+                  alpha = 0.7,
+                  aes(colour = group),
+                  width = 0.8,
+                  range_scale = 0.5) +
+  geom_vline(xintercept = 2,
+             linetype = 'dashed') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title.y = element_markdown(),
+        plot.subtitle = element_markdown()) +
+  scale_x_discrete(
+                   labels = c("all", "", "I", "S")
+                   # labels = c("all", "", "I", "K", "S")
+                   ) +
+  labs(x = '',
+       y = '',
+       subtitle = 'BMI at consent (kg/m<sup>2</sup>)') +
+  scale_colour_manual(values = c("grey20",
+                                 cols2[2],
+                                 cols2[7],
+                                 cols2[1]),
+                      aesthetics = c("fill", "colour"),
+                      guide = 'none') 
+  
+
+smoking_numbers <- x |> 
+  dplyr::group_by(group,
+                  smoking_history) |> 
+  dplyr::count()
+
+smoking <- smoking_numbers |> 
+  dplyr::mutate(smoking_history = factor(smoking_history, levels = rev(c('current smoker',
+                                                                     'former smoker',
+                                                                     'never smoker',
+                                                                     'unknown')))) |> 
+  ggplot(aes(x = group,
+             y = n,
+             fill = smoking_history)) +
+  geom_col(width = 0.4,
+           colour = 'white') +
+  geom_vline(xintercept = 2,
+             linetype = 'dashed') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title.y = element_markdown(),
+        plot.subtitle = element_markdown()
+          ) +
+  scale_x_discrete(
+    # labels = c("all", "", "I", "S")
+    labels = c("all", "", "I", "K", "S")
+    ) +
+  labs(x = '',
+       y = '',
+       subtitle = 'n (smoking history)') +
+  scale_fill_manual(values = c("grey70", cols2[c(8, 5, 4)]),
+                    guide = 'none')
+
+plot <- age_plot/bmi_plot/smoking
+
+pdf(file = 'figures/panels/1-demographics.pdf',
+    width = 4.1,
+    height = 5.5)
+print(plot)
+dev.off()
+```
+
+## Compliance
+
+```{r}
+x <- as.data.frame(colData(data)) |> 
+  dplyr::filter(visitId == 'M0') |>
+  dplyr::mutate(group = ifelse(interventionId == 'S', 'S', 'I'),
+                compliance = gsub("er compliance", "", compliance),
+                compliance = ifelse(is.na(dropout_date), compliance, "dropout"),
+                compliance = factor(compliance, levels = c("dropout", "low", "medium", "high")))
+
+compliance_plot <- x |> 
+  ggplot(aes(x = group,
+             fill = compliance)) +
+  geom_bar(color = 'white',
+           width = 0.5) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title.y = element_markdown(),
+        plot.subtitle = element_markdown()
+  ) +
+  labs(x = '',
+       y = '',
+       subtitle = 'Compliance groups (n)') +
+  scale_fill_manual(values = c("grey80", cols2[c(4, 5, 1)]),
+                    guide = 'none')
+  
+x <- as.data.frame(colData(data)) |> dplyr::filter(!visitId %in% c("M12", "M18")) |>
+  dplyr::mutate(group = ifelse(interventionId == 'S', 'S', 'I'),
+                compliance = gsub("er compliance", "", compliance),
+                compliance = ifelse(is.na(dropout_date), compliance, "dropout"),
+                compliance = factor(compliance, levels = c("dropout", "low", "medium", "high")))
+
+fasting_adh <- x |> dplyr::filter(group == 'I') |> 
+  ggplot(aes(x = visitId,
+             y = comprate_longitudinal)) +
+  geom_line(aes(group = subjectId,
+                colour = compliance),
+            alpha = 0.6) +
+  labs(x = '',
+       y = '',
+       subtitle = '% of days fasting (16:8)<br>intermittent fasting arm') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title.y = element_markdown(),
+        plot.subtitle = element_markdown()
+  ) +
+  scale_colour_manual(values = c("grey80", cols2[c(4, 5, 1)]),
+                    guide = 'none') +
+  coord_cartesian(expand = 0)
+
+smoking_adh <- x |> dplyr::filter(group == 'S') |> 
+  ggplot(aes(x = visitId,
+             y = comprate_longitudinal)) +
+  geom_line(aes(group = subjectId,
+                colour = compliance),
+            alpha = 0.6) +
+  labs(x = '',
+       y = '',
+       subtitle = '% of days smoke-free (16:8)<br>smoking cessation arm') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title.y = element_markdown(),
+        plot.subtitle = element_markdown()
+  ) +
+  scale_colour_manual(values = c("grey80", cols2[c(4, 1)]),
+                      guide = 'none') +
+  coord_cartesian(expand = 0)
+
+plot <- compliance_plot/fasting_adh/smoking_adh
+
+pdf(file = 'figures/panels/1-compliance.pdf',
+    width = 2.3,
+    height = 5.5)
+print(plot)
+dev.off()
+```
+
+## Availability matrix
+
+```{r}
+data_baseline_m6 <- data[,!data$visitId %in% c("M12", "M18"),]
+
+# Methylation
+meth_blood <- as.data.frame(wideFormat(data_baseline_m6[,,'Composite methylation scores: blood'],
+                          colDataCols = c("subjectId", "interventionId", "visitId",
+                                          'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'blood',
+                assay = 'methylation',
+                comp = paste0(sampletype, "_", assay))
+
+meth_buccal <- as.data.frame(wideFormat(data_baseline_m6[,,'Composite methylation scores: buccal'],
+                                        colDataCols = c("subjectId", "interventionId", "visitId",
+                                                        'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'buccal',
+                assay = 'methylation',
+                comp = paste0(sampletype, "_", assay))
+
+meth_cervical <- as.data.frame(wideFormat(data_baseline_m6[,,'Composite methylation scores: cervical'],
+                                        colDataCols = c("subjectId", "interventionId", "visitId",
+                                                        'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'cervical',
+                assay = 'methylation',
+                comp = paste0(sampletype, "_", assay))
+
+blood_h <- as.data.frame(wideFormat(data_baseline_m6[,,'Blood haemogram'],
+                                          colDataCols = c("subjectId", "interventionId", "visitId",
+                                                          'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'blood',
+                assay = 'routine bloods',
+                comp = paste0(sampletype, "_", assay))
+
+flow <- as.data.frame(wideFormat(data_baseline_m6[,,'Flow cytometry: white blood cell staining'],
+                                    colDataCols = c("subjectId", "interventionId", "visitId",
+                                                    'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'blood',
+                assay = 'immune profiling',
+                comp = paste0(sampletype, "_", assay))
+
+saliva_nmr <- as.data.frame(wideFormat(data_baseline_m6[,,'Saliva nuclear magnetic resonance'],
+                                 colDataCols = c("subjectId", "interventionId", "visitId",
+                                                 'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'saliva',
+                assay = 'nmr',
+                comp = paste0(sampletype, "_", assay))
+
+urine_nmr <- as.data.frame(wideFormat(data_baseline_m6[,,'Urine nuclear magnetic resonance'],
+                                       colDataCols = c("subjectId", "interventionId", "visitId",
+                                                       'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'urine',
+                assay = 'nmr',
+                comp = paste0(sampletype, "_", assay))
+
+faecal_microb <- as.data.frame(wideFormat(data_baseline_m6[,,'Stool microbiome: families'],
+                                      colDataCols = c("subjectId", "interventionId", "visitId",
+                                                      'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'faecal',
+                assay = 'microbiome',
+                comp = paste0(sampletype, "_", assay))
+
+saliva_microb <- as.data.frame(wideFormat(data_baseline_m6[,,'Saliva microbiome: families'],
+                                          colDataCols = c("subjectId", "interventionId", "visitId",
+                                                          'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'saliva',
+                assay = 'microbiome',
+                comp = paste0(sampletype, "_", assay))
+
+skin <- as.data.frame(wideFormat(data_baseline_m6[,,'Skin histology and transepidermal water loss assay'],
+                                          colDataCols = c("subjectId", "interventionId", "visitId",
+                                                          'dropout_date'))) |> 
+  dplyr::mutate(dropout = ifelse(is.na(dropout_date), "no", "yes")) |> 
+  dplyr::relocate(c(subjectId, interventionId, visitId, dropout)) |> 
+  dplyr::select(1:5) |> 
+  tidyr::pivot_wider(id_cols = c("subjectId", "interventionId", "dropout"),
+                     names_from = 'visitId', values_from = 'primary') |> 
+  dplyr::mutate(across(c(M0:M6), ~ ifelse(is.na(.), 0, 1))) |> 
+  dplyr::mutate(sampletype = 'skin',
+                assay = 'biopsy',
+                comp = paste0(sampletype, "_", assay))
+
+tmp <- meth_blood |> dplyr::full_join(meth_buccal) |> dplyr::full_join(meth_cervical) |> 
+  dplyr::full_join(saliva_nmr) |> dplyr::full_join(urine_nmr) |>
+  dplyr::full_join(saliva_microb) |> dplyr::full_join(faecal_microb) |> 
+  dplyr::full_join(blood_h) |> dplyr::full_join(skin) |> dplyr::full_join(flow) |> 
+  tidyr::pivot_longer(cols = c(M0:M6),
+                      names_to = 'visitId',
+                      values_to = 'value') |> 
+  dplyr::mutate(assay = factor(assay, levels =
+                                 c("routine bloods",
+                                   "methylation",
+                                   "nmr",
+                                   "microbiome",
+                                   "immune profiling",
+                                   "biopsy")),
+                sampletype = factor(sampletype, levels = c("blood", "buccal", "saliva", "cervical", "urine", "faecal", "skin")))
+                
+
+out_1 <- tmp |> 
+  dplyr::filter(value != 0) |>
+  dplyr::mutate(comp = factor(comp, levels = c(
+    "blood_routine bloods",
+    "blood_immune profiling",
+    "blood_methylation",
+    "buccal_methylation",
+    "cervical_methylation",
+    "saliva_microbiome",
+    "saliva_nmr",
+    "urine_nmr",
+    "faecal_microbiome",
+    "skin_biopsy"
+  ))) |> 
+  dplyr::arrange(subjectId) |>
+  ggplot(aes(x = visitId,
+             y = forcats::fct_reorder(subjectId, -as.numeric(as.factor(dropout))),
+             fill = sampletype,
+             alpha = dropout)) +
+  # geom_point(aes(colour = sampletype),
+  #            size = 2) +
+  geom_tile(colour = NA) +
+  facet_grid(interventionId ~ comp,
+             scales = 'free') +
+  # facet_grid(sampletype ~ assay) +
+  theme_bw() +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.grid = element_blank(),
+        axis.text.x = element_text(size = 7))  +
+  coord_cartesian(expand = 0) +
+  scale_fill_manual(values = cols,
+                    aesthetics = c("colour", "fill"),na.value = 'grey90') +
+  scale_alpha_discrete(range = c(1, 0.6)) +
+  labs(x = '',
+      y = '')
+
+pdf(file = 'figures/panels/1-grid.pdf',
+    width = 7.5, height = 3.75)
+print(out_1)
+dev.off()
+
+
+## Alternative version (not used)
+# tmp |> 
+#   dplyr::filter(value != 0) |> 
+#   dplyr::arrange(subjectId) |>
+#   ggplot(aes(x = visitId,
+#              y = forcats::fct_reorder(subjectId, -as.numeric(as.factor(dropout))),
+#              fill = sampletype,
+#              alpha = dropout)) +
+#   # geom_point(aes(colour = sampletype),
+#   #            size = 2) +
+#   geom_tile(colour = NA) +
+#   facet_grid(sampletype ~ assay) +
+#   # facet_grid(sampletype ~ assay) +
+#   theme_bw() +
+#   theme(axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank(),
+#         panel.grid = element_blank())  +
+#   coord_cartesian(expand = 0) +
+#   scale_fill_manual(values = cols,
+#                     aesthetics = c("colour", "fill"),
+#                     # na.value = 'grey90',
+#                     na.value = 'red') +
+#   scale_alpha_discrete(range = c(1, 0.6)) +
+#   labs(x = '', y = 'individuals')
+```
+
+:::

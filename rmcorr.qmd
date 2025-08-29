@@ -1,0 +1,368 @@
+---
+title: "Repeated measures correlation of indices"
+format: 
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+```{r libs, eval = T}
+packages <- c('here', 'dplyr', 'ggplot2', "ggraph", "patchwork", "ggtext", "ggrepel")
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+library(dplyr)
+library(ggplot2)
+library(here)
+library(ggtext)
+cols <- c("#1b69a1", "#48a0af", "#71b5a9", "#ec6669", "#f39668", "#bd647d", "#832c9b", "#5f70a8", 'grey90')
+pal <- colorRampPalette(colors = cols[c(1, 2, 3, 5, 4, 6, 7, 8)])
+here::i_am('rmcorr.qmd')
+
+# ---- Load data ----
+load(here('1-analyses/rmcorr/2-out/rmcorr-simple-asv.Rdata'))
+
+res2 <- res |>
+  # redo by measure1
+  dplyr::filter(!grepl("ASV", measure2)) |> 
+  dplyr::group_by(measure1) |> 
+  dplyr::mutate(padj = p.adjust(p, method = 'fdr')) |> 
+  dplyr::ungroup()
+
+res_mod <- res2 |> 
+  dplyr::mutate(sig = ifelse(padj < 0.05, "sig", "ns")) |> 
+  dplyr::filter(sig == 'sig') |> 
+  dplyr::mutate(assay1 = stringr::str_split_i(measure1, "_", 1),
+                assay2 = stringr::str_split_i(measure2, "_", 1)) |> 
+  dplyr::rowwise() |> 
+  dplyr::mutate(measure1_simple = gsub(paste0(assay1, "_"), "", measure1),
+                measure2_simple = gsub(paste0(assay2, "_"), "", measure2),
+                assay2 = ifelse(grepl("clr_",measure2_simple), paste0(assay2, "_clr"), assay2),
+                measure2_simple = gsub("clr_", "", measure2_simple))
+                
+# Add labels
+load(here('data/vars.Rdata'))
+vars_sub <- vars |> 
+  dplyr::mutate(assaylab = ifelse(is.na(assay2), assay, assay2)) |> 
+  dplyr::select(x, assay, assaylab, label) |> 
+  dplyr::mutate(assaylab = case_when(assaylab == 'Composite methylation scores: blood' ~ "Blood biomarkers",
+                                     assaylab == 'Composite methylation scores: buccal' ~ "Buccal biomarkers",
+                                     assaylab == 'Composite methylation scores: cervical' ~ "Cervical biomarkers",
+                                     TRUE ~ assaylab))
+
+res_lab <- res_mod |> 
+  dplyr::left_join(vars_sub, by = c("measure1_simple" = 'x',
+                                assay1 = 'assay')) |> 
+  dplyr::rename(assaylab_m1 = assaylab,
+                lab_m1 = label) |> 
+  dplyr::left_join(vars_sub, by = c("measure2_simple" = 'x',
+                                assay2 = 'assay')) |> 
+  dplyr::rename(assaylab_m2 = assaylab,
+                lab_m2 = label) |> 
+  dplyr::mutate(assaylab_m2 = case_when(assaylab_m2 == 'Saliva microbiome: families_clr' ~ "Saliva microbiome (families)",
+                                        assaylab_m2 == 'Stool microbiome: families_clr' ~ "Faecal microbiome (families)",
+                                        TRUE ~ assaylab_m2))
+```
+
+# Overview
+
+```{r}
+length(unique(res$measure1))
+
+prop <- res |> 
+  dplyr::mutate(sig = ifelse(padj < 0.05, "sig", "ns")) |> 
+  dplyr::group_by(measure1) |> 
+  dplyr::mutate(n_total = n()) |> 
+  dplyr::group_by(measure1, sig) |> 
+  dplyr::reframe(n = n(),
+                prop = n/n_total) |> 
+  dplyr::distinct() |> 
+  dplyr::ungroup()
+
+prop |> 
+  ggplot(aes(x = prop,
+             y = measure1,
+             fill = sig)) +
+  geom_col()
+
+
+# Compute unique associations
+total_n <- res_lab |> 
+  dplyr::group_by(measure1) |> 
+  dplyr::mutate(nn = n()) |> 
+  dplyr::select(measure1, lab_m1, assaylab_m1, nn) |> 
+  dplyr::distinct()
+
+prop <- res_lab |> 
+  dplyr::group_by(measure1) |> 
+  dplyr::mutate(total = n()) |> 
+  dplyr::group_by(measure1, assaylab_m2) |> 
+  dplyr::mutate(n = n(),
+                prop = n/total) |> 
+  dplyr::select(measure1, lab_m1, assaylab_m1, assaylab_m2, n, total, prop) |> 
+  dplyr::distinct() |> 
+  dplyr::left_join(total_n)
+
+order <- prop |> dplyr::ungroup() |> 
+  dplyr::select(measure1, assaylab_m1, lab_m1, nn) |> dplyr::distinct() |> 
+  dplyr::arrange(desc(nn)) |> 
+  dplyr::select(measure1, lab_m1)
+
+prop <- prop |> dplyr::mutate(measure1 = factor(measure1, levels = rev(order$measure1)))
+
+a <- prop |> dplyr::ungroup() |> 
+  ggplot(aes(x = prop,
+             y = measure1,
+             fill = assaylab_m2)) +
+  geom_col() +
+  facet_grid(assaylab_m1 ~ ., scales = "free", space='free') +
+  theme_bw() +
+  coord_cartesian(expand = F) +
+  theme(legend.position = 'bottom',
+        axis.ticks.y = element_blank()) +
+  scale_y_discrete(breaks = order$measure1,
+                   labels = order$lab_m1) +
+  labs(x = 'significant proportion', y = '') +
+  scale_fill_manual(values = pal(11),
+                    name = '')
+
+b <- prop |> dplyr::ungroup() |> 
+  dplyr::select(measure1, assaylab_m1, nn) |> dplyr::distinct() |> 
+  ggplot(aes(x = nn,
+             y = forcats::fct_reorder(measure1, nn))) +
+  geom_col(width = 0.7,
+           fill = 'grey70') +
+  facet_grid(assaylab_m1 ~ ., scales = "free", space='free') +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0, 10, 20)) +
+  coord_cartesian(xlim = c(0, 20), expand = F) +
+  theme(legend.position = 'bottom',
+        strip.text = element_blank(),
+        panel.grid = element_blank(),
+        # panel.border = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()
+        ) +
+  labs(x = 'total\nsignificant\nassociations', y = '') 
+
+plot <- (a|b) + plot_layout(widths = c(1, 0.3))
+
+ggsave(plot, file = 'figures/panels/rmcorr-overview.pdf',
+       width = 4.9, height = 7.5)
+```
+
+## Individual associations
+
+```{r}
+# Prep data & cols
+cols_for_assays <- c(pal(12), rep('black', 3))
+names(cols_for_assays) <- c("Blood haemogram",
+                            "Blood test",
+                            "Body weight and composition",
+                            "Stool microbiome (families)",
+                            "Flow cytometry: stimulated T cells",
+                            "Flow cytometry: T cell staining",
+                            "Flow cytometry: white blood cell staining",
+                            "Functional exercise capacity",
+                            "Saliva microbiome (families)",
+                            "Urine metabolome",
+                            "Vascular features",
+                            "Blood biomarkers", "Cervical biomarkers", "Buccal biomarkers")
+
+load(here("1-analyses/rmcorr/1-out/rmcorr-data-asv.Rdata"))
+dat <- dat |> dplyr::mutate(subjectId = factor(subjectId))
+
+plot_rmcorr <- function(m1, m2,
+                        lab1 = NULL, lab2 = NULL){
+  
+  if(is.null(lab1)){
+    lab1 <- res_lab |> dplyr::filter(measure1 == m1 & measure2 == m2) |> 
+      dplyr::pull(lab_m1)
+  } 
+    if(is.null(lab2)){
+    lab2 <- res_lab |> dplyr::filter(measure1 == m1 & measure2 == m2) |> 
+      dplyr::pull(lab_m2)
+  } 
+  
+  dat |> 
+    ggplot(aes(x = .data[[m1]],
+               y = .data[[m2]])) +
+    geom_point(aes(colour = subjectId),
+               size = 1.4, alpha = 0.7) +
+    scale_colour_manual(values = pal(160)) +
+    theme_bw() +
+    theme(legend.position = 'none') +
+    labs(x = paste0(lab1,'\n(scaled)'),
+         y = paste0(lab2, '\n(scaled)'))
+  
+}
+
+source("source/rmcorr_plot.R")
+
+
+dat |> 
+  ggplot(aes(x = `Blood haemogram_neutrophils`,
+             y = `Composite methylation scores: blood_AgeAccelGrimV2`)) +
+  geom_point(aes(colour = subjectId)) +
+  scale_colour_manual(values = pal(160)) +
+  theme(legend.position = 'none') +
+  theme(x = '',
+        y = '')
+
+# Neutrophil
+nt <- rmcorr_plot(m2 = "Blood haemogram_neutrophils",
+            m1 = "Composite methylation scores: blood_hepidish_Neutro")
+
+ggsave(nt, file = 'figures/panels/rmcorr_neutro.pdf',
+       width = 3.5, height = 3.5)
+
+# Neutrophil - Grim -----
+nt <- rmcorr_plot(m2 = "Blood haemogram_neutrophils",
+            m1 = "Composite methylation scores: blood_AgeAccelGrimV2")
+
+ggsave(nt, file = 'figures/panels/rmcorr_neutro-age.pdf',
+       width = 3.5, height = 3.5)
+
+# CRP ----
+plot_rmcorr(m1 = "Blood haemogram_neutrophils",
+            m2 = "Composite methylation scores: blood_hepidish_Neutro",
+            lab1 = 'neutrophil proportion (true)',
+            lab2 = 'neutrophil proportion (methylation estimated)')
+
+plot_rmcorr(m1 = "Composite methylation scores: blood_AgeAccelGrimV2",
+            m2 = "Blood haemogram_crp")
+
+# Bifidobacteriaceae- Grim -----
+bifido <- rmcorr_plot(m1 = "Composite methylation scores: blood_AgeAccelGrimV2",
+            m2 = "Saliva microbiome: families_clr_Bifidobacteriaceae")
+
+ggsave(bifido, file = 'figures/panels/rmcorr_bifido.pdf',
+       width = 3.5, height = 3.5)
+
+# SMK-imm haemoglobin-----
+haem <- rmcorr_plot(m1 = 'Composite methylation scores: blood_WID_SMK_immune_hypoM_corr_z',
+                    m2 = 'Blood haemogram_hemoglobin')
+ggsave(haem, file = 'figures/panels/rmcorr_haem.pdf',
+       width = 3.5, height = 3.5)
+
+# Buccal ic ----
+buccal_ic <- rmcorr_plot(m1 = "Composite methylation scores: buccal_ic",
+            m2 = "Flow cytometry: T cell staining_lymphocytes_single_cells_live_t_cells_cd8_t_cells_cd57pos_cd28neg")
+ggsave(buccal_ic, file = 'figures/panels/rmcorr_ic.pdf',
+       width = 3.5, height = 3.5)
+
+# Buccal rea------
+i <- 74
+buccal_rea <- rmcorr_plot(m1 = res_lab$measure1[i],
+            m2 = res_lab$measure2[i])
+ggsave(buccal_rea, file = 'figures/panels/rmcorr_rea.pdf',
+       width = 3.5, height = 3.5)
+
+# Cervical - EC and citric acid -----
+i <- 86
+ec <- rmcorr_plot(m1 = res_lab$measure1[i],
+            m2 = res_lab$measure2[i])
+ggsave(ec, file = 'figures/panels/rmcorr_ec.pdf',
+       width = 3.5, height = 3.5)
+```
+
+
+## Supplementary Figure
+
+```{r}
+a <- res_lab |> 
+  dplyr::filter(assaylab_m1 == 'Blood biomarkers') |>
+  ggplot(aes(x = r,
+             y = -log10(p),
+             colour = lab_m1,
+             size = -log10(p))) +
+  geom_point(alpha = 0.7) +
+  geom_text_repel(aes(label = lab_m2),
+                  max.overlaps = 45,
+                  size = 2.5,
+                  show.legend = F,
+                  alpha = 1) +
+  theme_bw() +
+  xlim(c(-1, 1)) +
+  scale_size_continuous(range = c(1, 4),guide = F) +
+  scale_colour_manual(values = pal(10),
+                      name = '') 
+
+b <- res_lab |> 
+  dplyr::filter(assaylab_m1 == 'Buccal biomarkers') |>
+  ggplot(aes(x = r,
+             y = -log10(p),
+             colour = lab_m1,
+             size = -log10(p))) +
+  geom_point(alpha = 0.7) +
+  geom_text_repel(aes(label = lab_m2),
+                  max.overlaps = 50,
+                  size = 2.5,
+                  show.legend = F,
+                  alpha = 1) +
+  theme_bw() +
+  xlim(c(-1, 1)) +
+  scale_size_continuous(range = c(1, 4),guide = F) +
+  scale_colour_manual(values = pal(10),
+                      name = '') 
+
+c <- res_lab |> 
+  dplyr::filter(assaylab_m1 == 'Cervical biomarkers') |>
+  ggplot(aes(x = r,
+             y = -log10(p),
+             colour = lab_m1,
+             size = -log10(p))) +
+  geom_point(alpha = 0.7) +
+  geom_text_repel(aes(label = lab_m2),
+                  max.overlaps = 50,
+                  size = 2.5,
+                  show.legend = F,
+                  alpha = 1) +
+  theme_bw() +
+  xlim(c(-1, 1)) +
+  scale_size_continuous(range = c(1, 4),guide = F) +
+  scale_colour_manual(values = pal(11),
+                      name = '') 
+
+# ggsave(a, file = 'figures/panels/rmcorr_suppl_blood.pdf',
+#        width = 7, height = 4.5)
+# 
+# ggsave(b, file = 'figures/panels/rmcorr_suppl_buccal.pdf',
+#        width = 7, height = 4.5)
+# 
+# ggsave(c, file = 'figures/panels/rmcorr_suppl_cervical.pdf',
+#        width = 7, height = 4.5)
+
+plot <- (a & labs(title = 'Blood biomarkers')) / (b & labs(title = 'Buccal biomarkers')) / (c & labs(title = 'Cervical biomarkers')) + plot_annotation(tag_levels = 'a')
+
+cairo_pdf(file = 'figures/panels/rmcorr_suppl.pdf',
+       width = 7, height = 14)
+print(plot)
+dev.off()
+```
+
+##  Supplementary Table
+
+```{r}
+out <- res_lab |> 
+  dplyr::select(assaylab_m1:lab_m2,
+                r:padj)
+
+out |> writexl::write_xlsx(path = 'out/Suppl_RMCORR.xlsx')
+
+```

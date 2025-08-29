@@ -1,0 +1,271 @@
+---
+title: "Figure 6 | Ageing malleability"
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+```{r libs, eval = F}
+packages <- c('MOFA2', 'here', 'dplyr', 'ggplot2', "tidygraph", "ggraph", "patchwork", "ggtext", "ggrepel")
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+library(dplyr)
+library(ggplot2)
+library(MOFA2)
+library(here)
+library(ggtext)
+cols <- c("#1b69a1", "#48a0af", "#71b5a9", "#ec6669", "#f39668", "#bd647d", "#832c9b", "#5f70a8", 'grey90')
+pal <- colorRampPalette(colors = cols[c(1, 2, 3, 5, 4, 6, 7, 8)])
+here::i_am('ageing-malleability.qmd')
+
+load('1-analyses/malleability/1-out/ageOut.Rdata')
+```
+
+This code generates graphs for figure 6.Analyses are run in 1-analyses/malleability/ scripts.
+
+# Figure
+
+## Code
+
+### Overivew - changes by compliance group
+
+```{r}
+cat_comp_i <- summary_m6_i |> 
+  select(category_hi, category_lo) |> 
+  tidyr::pivot_longer(cols = starts_with("category_"),
+                      names_to = "comp_group", values_to = "category") |>
+  mutate(comp_group = ifelse(comp_group == "category_hi", "High", "Low"),
+         category = factor(category)) |>
+  count(comp_group, category, name = "n") |>
+  group_by(comp_group) |>
+  mutate(prop = n/sum(n)) |>
+  ungroup() |> 
+  dplyr::mutate(comp_group = factor(comp_group, levels = c("Low", "High")),
+                category = factor(category, levels = rev(c("age-opposing", "attenuated", "accelerated"))),
+                intervention = 'intermittent fasting')
+
+cat_comp_s <- summary_m6_s |> 
+  select(category_hi, category_lo) |> 
+  tidyr::pivot_longer(cols = starts_with("category_"),
+                      names_to = "comp_group", values_to = "category") |>
+  mutate(comp_group = ifelse(comp_group == "category_hi", "High", "Low"),
+         category = factor(category)) |>
+  count(comp_group, category, name = "n") |>
+  group_by(comp_group) |>
+  mutate(prop = n/sum(n)) |> ungroup() |> 
+  dplyr::mutate(comp_group = factor(comp_group, levels = c("Low", "High")),
+                category = factor(category, levels = rev(c("age-opposing", "attenuated", "accelerated"))),
+                intervention = 'smoking cessation')
+
+cat_comp <- rbind(cat_comp_i, cat_comp_s)
+
+a <- cat_comp |> 
+  ggplot(aes(x = comp_group,
+             y = prop, fill = category)) +
+  geom_col(width = 0.7) +
+  scale_y_continuous(labels = scales::percent_format(), 
+                     expand = expansion(c(0,0.02))) +
+  labs(x = 'Compliance group',
+       y = "Proportion of features",
+       fill = "Category") +
+  theme_bw() +
+  facet_wrap(~intervention) +
+  scale_fill_manual(values = cols[c(5, 3, 1)],
+                    labels = c("accelerated/expected",
+                               "attenuated", "age-opposing"))
+
+a
+ggsave(a, file = 'figures/panels/malleability_a.pdf',
+       width = 5, height = 3.5)
+
+```
+
+
+### Individual features
+
+```{r}
+### merge 
+tab_i$intervention = 'intermittent fasting'
+tab_s$intervention = 'smoking cessation'
+
+tab <- rbind(tab_i, tab_s)
+
+### append variable names
+load("data/vars.Rdata")
+tab_label <- tab |> dplyr::left_join(vars, by = c("assay",
+                                            "rowname" = 'x')) |> 
+  dplyr::mutate(label = case_when(label == 'Global Methylation (islands)' ~ 
+                                    paste0(label, " - ", gsub("Composite methylation scores: ", "", assay)),
+                                  TRUE ~ label))
+
+# non-unique values
+dupes <- tab_label |> janitor::get_dupes(label)
+order <- tab_label |> dplyr::filter(intervention == 'intermittent fasting') 
+
+b <- tab_label |>  
+  arrange(assay) |> 
+  mutate(label = forcats::fct_inorder(label)) |> 
+  tidyr::pivot_longer(c(ratio_hi, ratio_lo),
+                      names_to = 'ratio', values_to = 'value') |> 
+  ggplot(aes(x = value,
+             y = label,
+             colour = ratio)) +
+  geom_line(aes(group = label),
+            colour = 'grey') +
+  geom_vline(xintercept = 1) +
+  geom_point() +
+  theme_bw() +
+  labs(x = 'observed/expected\n∆ (M6)',
+       y = '') +
+  facet_wrap(~intervention) +
+  scale_colour_manual(values = cols[c(2, 5)],
+                      labels = c('high compliance', 'low compliance')) +
+  theme(axis.ticks.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())
+
+b_sub <- tab_label |> 
+  tidyr::pivot_longer(c(ratio_hi, ratio_lo),
+                      names_to = 'ratio', values_to = 'value') |> 
+  arrange(assay) |> 
+  mutate(label = forcats::fct_inorder(label)) |> 
+  ggplot(aes(x = 1,
+             y = label,
+             fill = assay)) +
+  geom_tile() +
+  theme_minimal()  +
+  theme(axis.text.y = element_blank(),
+        panel.grid = element_blank(),
+        axis.text.x = element_blank()) +
+  labs(x = '', y = '') +
+  scale_fill_manual(values = pal(10))
+
+
+cairo_pdf(file = 'figures/panels/malleability_b.pdf',
+         width = 10, height = 9)
+print(b)
+dev.off()
+
+cairo_pdf(file = 'figures/panels/malleability_bsub.pdf',
+         width = 4, height = 9)
+print(b_sub)
+dev.off()
+
+```
+
+### Overall ageing score
+
+```{r}
+net_by_comp <- tab |> 
+  select(intervention, category_hi, category_lo) |> 
+  tidyr::pivot_longer(cols = starts_with("category_"),
+               names_to = "comp_group", values_to = "category") |> 
+  mutate(
+    comp_group = ifelse(comp_group == "category_hi", "High", "Low"),
+    val = case_when(
+      category == "age-opposing" ~  -1,
+      category == "accelerated"  ~ 1,
+      TRUE                       ~  0
+    )
+  ) |> 
+  group_by(intervention, comp_group) |> 
+  summarise(net_shift = mean(val, na.rm = TRUE), .groups = "drop")
+
+
+shift <- net_by_comp |> 
+  ggplot(aes(x = net_shift,
+             y = '',
+             colour = comp_group)) +
+  geom_point(size = 2) +
+  theme_bw() +
+  geom_vline(xintercept = 0) +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  scale_colour_manual(values = cols[c(2, 5)],
+                      labels = c('high compliance', 'low compliance')) +
+  labs(x = 'Net shift',
+       y = '') +
+  facet_wrap(~intervention)
+
+cairo_pdf(file = 'figures/panels/malleability_c.pdf',
+         width = 6.5, height = 1.5)
+print(shift)
+dev.off()
+```
+
+### Supplementary
+
+```{r}
+out <- tab_label |> 
+  dplyr::mutate(assay = ifelse(!is.na(assay2), assay2, assay)) |> 
+  dplyr::rename(high_compliance = category_hi,
+                low_compliance = category_lo) |> 
+  dplyr::select(assay, label, beta_age:intervention)
+
+writexl::write_xlsx(out, path = 'out/DeltaAge.xlsx')
+
+```
+
+```{r}
+load("data/data_normalized_baseline.Rdata")
+library(MultiAssayExperiment)
+assays <- c("Body composition", "Functional sports exam", "Vascular and body sonography")
+df_filtered <- subsetByAssay(data, assays)
+df <- as.data.frame(longForm(df_filtered,
+                                   colDataCols = c("age_at_consent", "bmi_at_consent", "comprate", "compliance", "visitId",
+                                                   'interventionId',
+                                                   'subjectId',
+                                                   'compliance_smkgroup'))) |> 
+  dplyr::filter(!is.na(value)) |> # must have Δ 
+  dplyr::rename(delta = value) |> 
+  dplyr::filter(interventionId != 'S' & visitId == 'M6') |> 
+                      # binary compliance
+  dplyr::mutate(comp_bin = ifelse(comprate > median(comprate), 'high', 'low'),
+                comp_bin = factor(comp_bin, levels = c("low", "high"))) 
+
+plotDelta <- function(var, label){
+  plot <- df |> 
+  dplyr::filter(rowname == var) |> 
+  ggplot(aes(x = comp_bin,
+             y = delta)) +
+    geom_hline(aes(yintercept = 0),
+               linetype = 'dashed',
+               colour = 'grey70') + 
+    geom_boxplot(aes(fill = comp_bin),
+               alpha = 0.2) +
+    ggbeeswarm::geom_beeswarm(aes(colour = comp_bin),
+                              size = 2, alpha = 0.7) +
+    # ggpubr::stat_compare_means(ref.group = 'low') +
+    labs(x = 'compliance group', y = paste0('∆ ', label)) +
+    theme_bw() +
+    theme(legend.position = 'none') +
+    scale_colour_manual(values = cols[c(5, 2)],
+                        aesthetics = c('colour', 'fill'))
+  
+  return(plot)
+
+}
+
+# plotDelta('bcm', 'body cellular mass')
+# plotDelta('hba1c', 'HbA1c')
+# 
+# plotDelta('pwv', 'intima-media thickness')
+# 
+
+```

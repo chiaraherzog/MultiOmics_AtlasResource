@@ -1,0 +1,407 @@
+---
+title: "Figure 2 | Variance partition"
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+::: {.panel-tabset}
+
+# Figure
+
+![](figures/Figure-2-Variance.png)
+
+# Code
+
+This code generates graphs for figure 2. Variance decomposition analyses are run in 1-analyses/variance-analysis/
+
+```{r libs, eval = F}
+# Precomputed data are loaded from 1-analyses/variance-analysis
+packages <- c('ggplot2', 'here', 'dplyr', 'ggtern', 'patchwork', 'viridis', 'purrr', 'ggnewscale')
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(here)
+library(viridis)
+
+cols <- c("#1b69a1", "#48a0af", "#71b5a9", "#ec6669", "#f39668", "#bd647d", "#832c9b", "#5f70a8")
+
+here::i_am('variance-analysis.qmd')
+
+load(here('1-analyses/variance-analysis/2-out/vp_w_o_raw_methylation.Rdata'))
+
+vp_df <- vp |> 
+  purrr::map_dfr(
+    .f = as.data.frame, # Convert each element to a data frame
+    .id = "group"       # Add list names as a column
+  )
+
+vp_df <- vp_df |> dplyr::filter(
+  ! group %in% c("saliva_microbiome_as_vs", "saliva_microbiome_families",
+                 "stool_microbiome_as_vs", "stool_microbiome_families")) # retain CLR transformed only
+
+```
+
+## Bar chart
+
+```{r}
+# Sort by min -> max intraindividual
+order <- vp_df |>
+  dplyr::group_by(group) |> 
+  dplyr::summarise(x = median(Residuals)) |> 
+  dplyr::arrange(dplyr::desc(x))
+order <- unique(order$group)
+
+order_vars <- vp_df |> 
+  tibble::rownames_to_column('var') |> 
+  dplyr::mutate(group = factor(group, levels = order)) |> 
+  dplyr::arrange(group, -Residuals)
+
+# Create the group annotations (tile)
+load(here('data/vars.Rdata')) # Variables were defined previously for IF analysis.
+# vars_if <- vars
+# load(here('data/vars_smk.Rdata')) # Variables were defined previously for SMK analysis.
+vars <- vars |> 
+  dplyr::mutate(assay3 = janitor::make_clean_names(assay,allow_dupes = T)) |> 
+  dplyr::select(assay, assay2, assay3) |> dplyr::distinct()
+
+labels <- vars[match(order, vars$assay3),]
+labels <- labels |> dplyr::mutate(label = ifelse(!is.na(assay2), assay2, assay)) |> 
+  dplyr::pull(label)
+
+group_annotations <- order_vars |>
+  dplyr::group_by(group) |> 
+  dplyr::mutate(var_ordered = cur_group_id()) |> 
+  dplyr::distinct(var, group, var_ordered) |>
+  dplyr::mutate(y = 1.07,  # Fixed y position for the annotation
+                height = 0.1) # Height of the tile
+
+# # Set colours
+annotation_colours <- colorRampPalette(cols)(length(order))
+names(annotation_colours) <- unique(order)
+
+# Create the plot
+var_barplot <- order_vars |>
+  tidyr::pivot_longer(subjectId:Residuals,
+                      names_to = "type",
+                      values_to = "value") |>
+  dplyr::mutate(group = factor(group, levels = rev(order)),
+                var = factor(var, levels = rev(order_vars$var)),
+                ) |> 
+  ggplot(aes(x = var,
+             y = value,
+             fill = type)) +
+  geom_col() +
+  scale_fill_viridis_d(name = 'Variance explained (%)',
+                       labels = c('study arm',
+                                  'intra-individual',
+                                  'inter-individual'),
+                       option = 'G') +
+  coord_flip() +
+  theme(
+    axis.text.y = element_blank()
+  ) +
+  ggnewscale::new_scale_fill() +  # Reset the fill scale for the group annotation
+  coord_cartesian(clip = "off") +
+  geom_tile(data = group_annotations,
+            aes(x = var,
+                y = y,  # Fixed position for the annotation
+                fill = group,  # Use group to color tiles
+                height = height),
+            width = 1, inherit.aes = FALSE) +
+  scale_fill_viridis_d(labels = labels)+
+  # scale_fill_manual(values = annotation_colours) +
+  coord_flip() +
+  theme(
+    plot.margin = margin(10, 10, 50, 10),
+    axis.title.y = element_blank(),
+    axis.ticks.y = element_blank()
+  ) +
+  labs(y = 'Proportion of\nvariance explained')
+
+pdf(here('out/variance-analysis1.pdf'),
+    width = 5.7, height = 7.5)
+print(var_barplot)
+dev.off()
+```
+
+## Boxplots
+
+```{r}
+order_vars <- vp_df |> 
+  tibble::rownames_to_column('var') |> 
+  dplyr::mutate(group = factor(group, levels = order)) |> 
+  dplyr::arrange(group, -Residuals)
+
+# Values for in-text stats:
+vals <- order_vars |> 
+  dplyr::group_by(group) |> 
+  dplyr::reframe(across(c(interventionId_bin, subjectId, Residuals)))
+
+# Checks
+table(order_vars$group)
+x <- order_vars[order_vars$group=='vascular_and_body_sonography',]
+x <- order_vars[order_vars$group=='functional_sports_exam',]
+
+ggplot_labs <- labels
+names(ggplot_labs) <- order
+
+# Boxplot
+boxplot <- order_vars |>  
+  tidyr::pivot_longer(subjectId:Residuals,
+                      names_to = 'type',
+                      values_to = 'value') |> 
+  dplyr::mutate(group = factor(group, levels = order),
+                type = factor(type, levels = c('interventionId_bin', 'Residuals', 'subjectId'))) |> 
+  ggplot(aes(x = group,
+             y = value)) +
+  # geom_violin(aes(fill = type)) +
+  geom_boxplot(outlier.shape = NA,
+               aes(fill = type)) +
+  scale_fill_viridis_d(option = 'G',labels = c('study arm',
+                                               'intra-individual',
+                                               'inter-individual'),
+                       name = '') +
+  theme_bw() +
+  labs(x = '') +
+  coord_flip() +
+  facet_wrap(group ~ 1,
+             scales = 'free_y',
+             ncol = 1) +
+  theme(axis.ticks.y = element_blank(),
+        strip.text = element_blank()) +
+  labs(y = 'Proportion of variance explained')
+        
+
+pdf(here('out/variance-analysis2.pdf'),
+    width = 7, height = 8.5)
+print(boxplot)
+dev.off()
+```
+
+## Ternary plot (Methylation)
+
+```{r}
+# Load methylation data
+load(here('1-analyses/variance-analysis/3-out/vp_buccal_methylation.Rdata'))
+load(here('1-analyses/variance-analysis/3-out/vp_blood_methylation.Rdata'))
+load(here('1-analyses/variance-analysis/3-out/vp_cervical_methylation.Rdata'))
+
+# Ternary - Cervical
+vp_df_cervical <- as.data.frame(vp_cervical)
+tern_cervical <- vp_df_cervical |>
+  ggtern(aes(x = subjectId,
+             y = interventionId,
+             z = Residuals)) +
+  geom_hex_tern(aes(fill = after_stat(log(density))),
+                bins = 50,
+                colour = NA) +
+  scale_fill_viridis_c(limits = c(-12, -1)) +
+  theme_bw() +
+  theme(tern.axis.arrow.show = T) +
+  labs(x = 'Inter-individual',
+       y = 'Study arm',
+       z = 'Intra-individual') 
+
+pdf(here('out/tern-cervical.pdf'),
+    width = 5, height = 5)
+print(tern_cervical)
+dev.off()
+
+boxplot_cervical <- as.data.frame(vp_cervical) |>
+  tidyr::pivot_longer(everything(),
+                      names_to = 'type',
+                      values_to = 'value') |> 
+  ggplot(aes(x = '',
+             y = value)) +
+  # geom_violin(aes(fill = type)) +
+  geom_boxplot(outlier.shape = NA,
+               aes(fill = type)) +
+  scale_fill_viridis_d(option = 'G',
+                       labels = c('study arm',
+                                  'intra-individual',
+                                  'inter-individual'),
+                       name = '') +
+  theme_bw() +
+  labs(x = '') +
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(),
+        strip.text = element_blank(),
+        legend.position = 'none') +
+  labs(y = 'Proportion of variance explained')
+        
+
+pdf(here('out/boxplot-cervical.pdf'),
+    width = 4, height = 1.5)
+print(boxplot_cervical)
+dev.off()
+
+
+# Ternary - buccal
+vp_df_buccal <- as.data.frame(vp_buccal)
+tern_buccal <- vp_df_buccal |>
+  ggtern(aes(x = subjectId,
+             y = interventionId,
+             z = Residuals)) +
+  geom_hex_tern(aes(fill = after_stat(log(density))),
+                bins = 50,
+                colour = NA) +
+  scale_fill_viridis_c(limits = c(-12, -1)) +
+  theme_bw() +
+  theme(tern.axis.arrow.show = T) +
+  labs(x = 'Inter-individual',
+       y = 'Study arm',
+       z = 'Intra-individual') 
+
+pdf(here('out/tern-buccal.pdf'),
+    width = 5, height = 5)
+print(tern_buccal)
+dev.off()
+
+boxplot_buccal <- as.data.frame(vp_buccal) |>
+  tidyr::pivot_longer(everything(),
+                      names_to = 'type',
+                      values_to = 'value') |> 
+  ggplot(aes(x = '',
+             y = value)) +
+  # geom_violin(aes(fill = type)) +
+  geom_boxplot(outlier.shape = NA,
+               aes(fill = type)) +
+  scale_fill_viridis_d(option = 'G',
+                       labels = c('study arm',
+                                  'intra-individual',
+                                  'inter-individual'),
+                       name = '') +
+  theme_bw() +
+  labs(x = '') +
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(),
+        strip.text = element_blank(),
+        legend.position = 'none') +
+  labs(y = 'Proportion of variance explained')
+        
+
+pdf(here('out/boxplot-buccal.pdf'),
+    width = 4, height = 1.5)
+print(boxplot_buccal)
+dev.off()
+
+# Ternary - blood
+vp_df_blood <- as.data.frame(vp_blood)
+tern_blood <- vp_df_blood |>
+  ggtern(aes(x = subjectId,
+             y = interventionId,
+             z = Residuals)) +
+  geom_hex_tern(aes(fill = after_stat(log(density))),
+                bins = 50,
+                colour = NA) +
+  scale_fill_viridis_c(limits = c(-12, -1)) +
+  theme_bw() +
+  theme(tern.axis.arrow.show = T) +
+  labs(x = 'Inter-individual',
+       y = 'Study arm',
+       z = 'Intra-individual') 
+
+pdf(here('out/tern-blood.pdf'),
+    width = 5, height = 5)
+print(tern_blood)
+dev.off()
+
+boxplot_blood <- as.data.frame(vp_blood) |>
+  tidyr::pivot_longer(everything(),
+                      names_to = 'type',
+                      values_to = 'value') |> 
+  ggplot(aes(x = '',
+             y = value)) +
+  # geom_violin(aes(fill = type)) +
+  geom_boxplot(outlier.shape = NA,
+               aes(fill = type)) +
+  scale_fill_viridis_d(option = 'G',
+                       labels = c('study arm',
+                                  'intra-individual',
+                                  'inter-individual'),
+                       name = '') +
+  theme_bw() +
+  labs(x = '') +
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(),
+        strip.text = element_blank(),
+        legend.position = 'none') +
+  labs(y = 'Proportion of variance explained')
+        
+
+pdf(here('out/boxplot-blood.pdf'),
+    width = 4, height = 1.5)
+print(boxplot_blood)
+dev.off()
+```
+
+## Output for Supplementary
+
+```{r}
+load(here('1-analyses/variance-analysis/2-out/vp_w_o_raw_methylation.Rdata'))
+
+vp_df <- vp |> 
+  purrr::map_dfr(
+    .f = as.data.frame, # Convert each element to a data frame
+    .id = "group"       # Add list names as a column
+  )
+
+vp_df <- vp_df |> dplyr::filter(
+  ! group %in% c("saliva_microbiome_as_vs_clr", "saliva_microbiome_families_clr",
+                 "stool_microbiome_as_vs_clr", "stool_microbiome_families_clr"))
+load(here('data/vars.Rdata'))
+
+vp_df_out <- vp_df |> 
+  tibble::rownames_to_column('x') |> 
+  dplyr::mutate(x = str_remove(x, "\\.\\.\\..*$")) |> 
+  dplyr::left_join(vars,
+                   relationship = 'many-to-many') |> 
+  dplyr::filter(!is.na(assay)) |> 
+  dplyr::filter(
+    grepl("haemogram|staining|funtional|vascular", group) |
+    (group == "composite_methylation_scores_blood" & grepl("blood", assay)) |
+    (group == "composite_methylation_scores_buccal" & grepl("buccal", assay)) | 
+    (group == "composite_methylation_scores_cervical" & grepl("cervical", assay)) |
+    (group == 'flow_cytometry_stimulated_t_cells' & grepl(" stimulated T", assay)) |
+    (group == 'flow_cytometry_unstimulated_t_cells' & grepl("unstimulated T", assay)) |
+    (group == 'saliva_microbiome_as_vs' & !grepl("clr", assay)) |
+    (group == 'stool_microbiome_as_vs' & !grepl("clr", assay)) |
+    (group == 'saliva_microbiome_families' & assay == 'Saliva microbiome: families') |
+    (group == 'stool_microbiome_families' & assay == 'Stool microbiome: families') |
+    (group == 'saliva_nuclear_magnetic_resonance_normalized' & assay == 'Saliva nuclear magnetic resonance: normalized') |
+    (group == 'urine_nuclear_magnetic_resonance_normalized' & assay == 'Urine nuclear magnetic resonance: normalized')
+    ) |> 
+  dplyr::mutate(layer = ifelse(is.na(assay2), assay, assay2),
+                label = ifelse(is.na(label), x, label)) |> 
+  dplyr::select(layer, label, subjectId, interventionId_bin, Residuals) |> 
+  dplyr::rename(prop_subject = subjectId,
+                prop_studyarm = interventionId_bin,
+                prop_resid = Residuals) |> 
+  dplyr::group_by(layer) |> dplyr::arrange(desc(prop_subject))
+
+writexl::write_xlsx(vp_df_out, path = 'out/Suppl-Variance.xlsx')
+
+```
+
+:::

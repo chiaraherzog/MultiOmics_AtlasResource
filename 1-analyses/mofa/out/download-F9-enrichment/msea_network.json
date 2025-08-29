@@ -1,0 +1,521 @@
+{
+ "nodes": [
+ {
+ "id": "Glycine and Serine Metabolism",
+"label": "Glycine and Serine Metabolism",
+"size": 7.237288,
+"color": "#FF0000",
+"x": -2.749938,
+"y": -3.321141 
+},
+{
+ "id": "Phosphatidylethanolamine Biosynthesis",
+"label": "Phosphatidylethanolamine Biosynthesis",
+"size": 11.33333,
+"color": "#FF0900",
+"x": -1.859469,
+"y": -8.041628 
+},
+{
+ "id": "Methionine Metabolism",
+"label": "Methionine Metabolism",
+"size": 6.579952,
+"color": "#FF1200",
+"x": -2.605232,
+"y": -2.279169 
+},
+{
+ "id": "Methylhistidine Metabolism",
+"label": "Methylhistidine Metabolism",
+"size": 15.53133,
+"color": "#FF1A00",
+"x": 1.929983,
+"y": -6.687371 
+},
+{
+ "id": "Selenoamino Acid Metabolism",
+"label": "Selenoamino Acid Metabolism",
+"size": 6.710575,
+"color": "#FF2300",
+"x":  3.16738,
+"y": -2.703274 
+},
+{
+ "id": "Urea Cycle",
+"label": "Urea Cycle",
+"size": 6.577818,
+"color": "#FF2C00",
+"x": -4.906683,
+"y": -2.974559 
+},
+{
+ "id": "Valine, Leucine and Isoleucine Degradation",
+"label": "Valine, Leucine and Isoleucine Degradation",
+"size": 5.542373,
+"color": "#FF3500",
+"x": -5.781815,
+"y": -6.038146 
+},
+{
+ "id": "Tryptophan Metabolism",
+"label": "Tryptophan Metabolism",
+"size": 5.542373,
+"color": "#FF3E00",
+"x": -0.5600325,
+"y": 1.636738 
+},
+{
+ "id": "Aspartate Metabolism",
+"label": "Aspartate Metabolism",
+"size":  5.86123,
+"color": "#FF4600",
+"x": -4.993029,
+"y": -3.433324 
+},
+{
+ "id": "Homocysteine Degradation",
+"label": "Homocysteine Degradation",
+"size": 8.555556,
+"color": "#FF4F00",
+"x": -1.284703,
+"y": 0.369473 
+},
+{
+ "id": "Lactose Degradation",
+"label": "Lactose Degradation",
+"size": 8.555556,
+"color": "#FF5800",
+"x": 2.680363,
+"y": -1.020968 
+},
+{
+ "id": "Sphingolipid Metabolism",
+"label": "Sphingolipid Metabolism",
+"size": 5.506266,
+"color": "#FF6100",
+"x": -3.426423,
+"y": -7.969363 
+},
+{
+ "id": "Propanoate Metabolism",
+"label": "Propanoate Metabolism",
+"size": 5.386635,
+"color": "#FF6A00",
+"x": -5.092832,
+"y": -4.993629 
+},
+{
+ "id": "Taurine and Hypotaurine Metabolism",
+"label": "Taurine and Hypotaurine Metabolism",
+"size": 7.166667,
+"color": "#FF7200",
+"x": 0.5260808,
+"y": -5.924045 
+},
+{
+ "id": "Glucose-Alanine Cycle",
+"label": "Glucose-Alanine Cycle",
+"size": 6.861004,
+"color": "#FF7B00",
+"x": -5.413698,
+"y": -1.30166 
+},
+{
+ "id": "Vitamin K Metabolism",
+"label": "Vitamin K Metabolism",
+"size": 6.861004,
+"color": "#FF8400",
+"x": 0.08753604,
+"y": -0.8953158 
+},
+{
+ "id": "Phosphatidylcholine Biosynthesis",
+"label": "Phosphatidylcholine Biosynthesis",
+"size": 6.584229,
+"color": "#FF8D00",
+"x": -1.004911,
+"y": -8.119745 
+},
+{
+ "id": "Arginine and Proline Metabolism",
+"label": "Arginine and Proline Metabolism",
+"size": 4.923077,
+"color": "#FF9500",
+"x": -3.786153,
+"y": -3.236412 
+},
+{
+ "id": "Alanine Metabolism",
+"label": "Alanine Metabolism",
+"size": 5.949853,
+"color": "#FF9E00",
+"x": -4.893647,
+"y": -4.012192 
+},
+{
+ "id": "Nucleotide Sugars Metabolism",
+"label": "Nucleotide Sugars Metabolism",
+"size": 5.506266,
+"color": "#FFA700",
+"x": 1.517765,
+"y": 0.2082127 
+},
+{
+ "id": "Glutathione Metabolism",
+"label": "Glutathione Metabolism",
+"size": 5.506266,
+"color": "#FFB000",
+"x": -3.124538,
+"y": -5.431817 
+},
+{
+ "id": "Threonine and 2-Oxobutanoate Degradation",
+"label": "Threonine and 2-Oxobutanoate Degradation",
+"size": 5.506266,
+"color": "#FFB900",
+"x": -5.01528,
+"y": -6.35879 
+},
+{
+ "id": "Betaine Metabolism",
+"label": "Betaine Metabolism",
+"size": 5.386635,
+"color": "#FFC100",
+"x": -1.553667,
+"y": -2.860853 
+},
+{
+ "id": "Androstenedione Metabolism",
+"label": "Androstenedione Metabolism",
+"size": 5.087683,
+"color": "#FFCA00",
+"x": 1.402188,
+"y": -2.03868 
+},
+{
+ "id": "Phenylalanine and Tyrosine Metabolism",
+"label": "Phenylalanine and Tyrosine Metabolism",
+"size": 4.855288,
+"color": "#FFD300",
+"x": -6.207319,
+"y": -3.062694 
+},
+{
+ "id": "Pterine Biosynthesis",
+"label": "Pterine Biosynthesis",
+"size": 4.788909,
+"color": "#FFDC00",
+"x":   2.3539,
+"y": -5.329796 
+},
+{
+ "id": "Phospholipid Biosynthesis",
+"label": "Phospholipid Biosynthesis",
+"size": 4.727116,
+"color": "#FFE500",
+"x": 3.040711,
+"y": -4.20349 
+},
+{
+ "id": "Folate Metabolism",
+"label": "Folate Metabolism",
+"size": 4.727116,
+"color": "#FFED00",
+"x": -4.509876,
+"y": -1.351807 
+},
+{
+ "id": "Ammonia Recycling",
+"label": "Ammonia Recycling",
+"size": 4.615509,
+"color": "#FFF600",
+"x": -3.978145,
+"y": -2.760139 
+},
+{
+ "id": "Fructose and Mannose Degradation",
+"label": "Fructose and Mannose Degradation",
+"size": 4.615509,
+"color": "#FFFF00",
+"x": -3.784052,
+"y": 1.431758 
+},
+{
+ "id": "Androgen and Estrogen Metabolism",
+"label": "Androgen and Estrogen Metabolism",
+"size": 4.517451,
+"color": "#FFFF0E",
+"x": 1.454305,
+"y": -2.912317 
+},
+{
+ "id": "Beta-Alanine Metabolism",
+"label": "Beta-Alanine Metabolism",
+"size": 4.472754,
+"color": "#FFFF2B",
+"x": -4.590447,
+"y": -0.4247429 
+},
+{
+ "id": "Fatty Acid Biosynthesis",
+"label": "Fatty Acid Biosynthesis",
+"size": 4.430615,
+"color": "#FFFF47",
+"x": -0.941471,
+"y": -6.423508 
+},
+{
+ "id": "Galactose Metabolism",
+"label": "Galactose Metabolism",
+"size": 4.319261,
+"color": "#FFFF63",
+"x": 0.8362509,
+"y": 0.7076289 
+},
+{
+ "id": "Histidine Metabolism",
+"label": "Histidine Metabolism",
+"size": 4.193317,
+"color": "#FFFF80",
+"x": -3.872087,
+"y": -1.827376 
+},
+{
+ "id": "Steroid Biosynthesis",
+"label": "Steroid Biosynthesis",
+"size": 4.043841,
+"color": "#FFFF9C",
+"x": 0.7234232,
+"y": -4.408427 
+},
+{
+ "id": "Glutamate Metabolism",
+"label": "Glutamate Metabolism",
+"size": 4.043841,
+"color": "#FFFFB8",
+"x": -3.992257,
+"y": -4.110394 
+},
+{
+ "id": "Pyrimidine Metabolism",
+"label": "Pyrimidine Metabolism",
+"size": 3.877193,
+"color": "#FFFFD4",
+"x": -2.264752,
+"y": 1.631272 
+},
+{
+ "id": "Bile Acid Biosynthesis",
+"label": "Bile Acid Biosynthesis",
+"size": 3.769231,
+"color": "#FFFFF1",
+"x":  0.59975,
+"y": -7.637809 
+} 
+],
+"edges": [ {
+ "id": "1",
+"source": "Glycine and Serine Metabolism",
+"target": "Methionine Metabolism" 
+},
+{
+ "id": "2",
+"source": "Urea Cycle",
+"target": "Aspartate Metabolism" 
+},
+{
+ "id": "3",
+"source": "Urea Cycle",
+"target": "Propanoate Metabolism" 
+},
+{
+ "id": "4",
+"source": "Valine, Leucine and Isoleucine Degradation",
+"target": "Propanoate Metabolism" 
+},
+{
+ "id": "5",
+"source": "Urea Cycle",
+"target": "Glucose-Alanine Cycle" 
+},
+{
+ "id": "6",
+"source": "Phosphatidylethanolamine Biosynthesis",
+"target": "Phosphatidylcholine Biosynthesis" 
+},
+{
+ "id": "7",
+"source": "Glycine and Serine Metabolism",
+"target": "Arginine and Proline Metabolism" 
+},
+{
+ "id": "8",
+"source": "Urea Cycle",
+"target": "Arginine and Proline Metabolism" 
+},
+{
+ "id": "9",
+"source": "Aspartate Metabolism",
+"target": "Arginine and Proline Metabolism" 
+},
+{
+ "id": "10",
+"source": "Urea Cycle",
+"target": "Alanine Metabolism" 
+},
+{
+ "id": "11",
+"source": "Valine, Leucine and Isoleucine Degradation",
+"target": "Threonine and 2-Oxobutanoate Degradation" 
+},
+{
+ "id": "12",
+"source": "Propanoate Metabolism",
+"target": "Threonine and 2-Oxobutanoate Degradation" 
+},
+{
+ "id": "13",
+"source": "Glycine and Serine Metabolism",
+"target": "Betaine Metabolism" 
+},
+{
+ "id": "14",
+"source": "Methionine Metabolism",
+"target": "Betaine Metabolism" 
+},
+{
+ "id": "15",
+"source": "Urea Cycle",
+"target": "Phenylalanine and Tyrosine Metabolism" 
+},
+{
+ "id": "16",
+"source": "Aspartate Metabolism",
+"target": "Phenylalanine and Tyrosine Metabolism" 
+},
+{
+ "id": "17",
+"source": "Glucose-Alanine Cycle",
+"target": "Folate Metabolism" 
+},
+{
+ "id": "18",
+"source": "Glycine and Serine Metabolism",
+"target": "Ammonia Recycling" 
+},
+{
+ "id": "19",
+"source": "Methionine Metabolism",
+"target": "Ammonia Recycling" 
+},
+{
+ "id": "20",
+"source": "Urea Cycle",
+"target": "Ammonia Recycling" 
+},
+{
+ "id": "21",
+"source": "Aspartate Metabolism",
+"target": "Ammonia Recycling" 
+},
+{
+ "id": "22",
+"source": "Arginine and Proline Metabolism",
+"target": "Ammonia Recycling" 
+},
+{
+ "id": "23",
+"source": "Alanine Metabolism",
+"target": "Ammonia Recycling" 
+},
+{
+ "id": "24",
+"source": "Folate Metabolism",
+"target": "Ammonia Recycling" 
+},
+{
+ "id": "25",
+"source": "Androstenedione Metabolism",
+"target": "Androgen and Estrogen Metabolism" 
+},
+{
+ "id": "26",
+"source": "Glucose-Alanine Cycle",
+"target": "Beta-Alanine Metabolism" 
+},
+{
+ "id": "27",
+"source": "Nucleotide Sugars Metabolism",
+"target": "Galactose Metabolism" 
+},
+{
+ "id": "28",
+"source": "Methionine Metabolism",
+"target": "Histidine Metabolism" 
+},
+{
+ "id": "29",
+"source": "Urea Cycle",
+"target": "Histidine Metabolism" 
+},
+{
+ "id": "30",
+"source": "Arginine and Proline Metabolism",
+"target": "Histidine Metabolism" 
+},
+{
+ "id": "31",
+"source": "Folate Metabolism",
+"target": "Histidine Metabolism" 
+},
+{
+ "id": "32",
+"source": "Ammonia Recycling",
+"target": "Histidine Metabolism" 
+},
+{
+ "id": "33",
+"source": "Beta-Alanine Metabolism",
+"target": "Histidine Metabolism" 
+},
+{
+ "id": "34",
+"source": "Glycine and Serine Metabolism",
+"target": "Glutamate Metabolism" 
+},
+{
+ "id": "35",
+"source": "Urea Cycle",
+"target": "Glutamate Metabolism" 
+},
+{
+ "id": "36",
+"source": "Aspartate Metabolism",
+"target": "Glutamate Metabolism" 
+},
+{
+ "id": "37",
+"source": "Propanoate Metabolism",
+"target": "Glutamate Metabolism" 
+},
+{
+ "id": "38",
+"source": "Arginine and Proline Metabolism",
+"target": "Glutamate Metabolism" 
+},
+{
+ "id": "39",
+"source": "Alanine Metabolism",
+"target": "Glutamate Metabolism" 
+},
+{
+ "id": "40",
+"source": "Glutathione Metabolism",
+"target": "Glutamate Metabolism" 
+},
+{
+ "id": "41",
+"source": "Ammonia Recycling",
+"target": "Glutamate Metabolism" 
+} ] 
+}

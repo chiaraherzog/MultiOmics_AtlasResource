@@ -1,0 +1,5 @@
+---
+title: "Lifestyle atlas resource"
+---
+
+This website describes the code for analysis in the Lifestyle atlas script.

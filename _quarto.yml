@@ -1,0 +1,33 @@
+project:
+  type: website
+
+website:
+  title: 'Atlas resource: analysis'
+  back-to-top-navigation: true
+  sidebar:
+    logo-href: index.qmd
+    style: "floating"
+    search: true
+    contents:
+      - href: index.qmd
+        text: 'Home'
+      - section: "Findings"
+        contents:
+          - methylation-qc.qmd
+           - metabolome-qc.qmd
+      - section: "Findings"
+        contents:
+          - panels-fig1.qmd
+          - variance-analysis.qmd
+          - mowas.qmd
+          - mofa.qmd
+          - mefisto.qmd
+          - rmcorr.qmd
+          - methylation-decomposition.qmd
+          - ageing-malleability.qmd
+          
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true

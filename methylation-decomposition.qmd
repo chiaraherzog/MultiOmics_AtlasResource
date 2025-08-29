@@ -1,0 +1,677 @@
+---
+title: "Decomposition of methylation data"
+format: 
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+```{r libs, eval = T}
+packages <- c('here', 'dplyr', 'ggplot2', "tidygraph", "ggraph", "patchwork", "ggtext", "ggrepel", "ggridges")
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+library(dplyr)
+library(ggridges)
+library(ggplot2)
+library(here)
+library(NatParksPalettes)
+library(ggtext)
+cols <- c("#1b69a1", "#48a0af", "#71b5a9", "#ec6669", "#f39668", "#bd647d", "#832c9b", "#5f70a8", 'grey90')
+pal <- colorRampPalette(colors = cols[c(1, 2, 3, 5, 4, 6, 7, 8)])
+here::i_am('methylation-decomposition.qmd')
+
+# ---- Load data ----
+load(here('0-preprocessing/8-output/plotting-outputs.Rdata'))
+load(here('0-preprocessing/4-output/variability_overall.Rdata'))
+```
+
+# Overview
+
+Strategy
+
+* Filter out any CpGs with variability across the entire dataset, over individuals, or sample types < technical replicate variability -> these are deemed "non-variable"
+  + only `r length(non_variable_cpgs)` meet these criteria
+* The remaining CpGs will be subjected to variance decomposition
+
+## Variability
+
+```{r, eval = F}
+load(here("0-preprocessing/3-output/beta-variability.Rdata"))
+
+a <- df_sd |> 
+  ggplot(aes(x = mean,
+             y = sd)) +
+  geom_hex(bins = 100) +
+  scale_fill_viridis() +
+  labs(x = 'mean-sd plot in technical replicates')
+
+b <- df_sd |> 
+  ggplot(aes(x = sd)) +
+  geom_histogram(bins = 100) +
+  labs(x = 'sd in technical replicates')
+
+a|b
+```
+
+# Model 1
+
+Formula components for variance decomposition:
+
+* `(1 | subjectId)` (individual) 
+* `(1 | sampletype)` (sampletype)
+* `(1 | visitId)` (time - overall)
+* `(1 | studyarm)` (study arm - I versus S)
+* `(1 | studyarm:visitId)` (study arm over time)
+* `(1 | studyarm:sampletype)` (study arm by sample type)
+* `(1 | sampletype:visitId)` (sample type over time)
+* `(1 | sampletype:visitId:studyarm)` (study by sample type over time)
+
+This model does not explore directionality, it simply explores which of the above combinations explains the variability in the data.
+
+## Overview
+
+![](figures/Figure-Variance.png)
+
+```{r, eval = F}
+load("1-analyses/variance-analysis-methylation/5-output/vp_results.Rdata")
+load("1-analyses/variance-analysis-methylation/2-output/variability_overall.Rdata")
+
+categories <- rev(c("non-variable (stable)",
+                "individual (stable)",
+                "tissue (stable)",
+                "intervention (stable)",
+                "tissue × intervention (stable)",
+                "residual",
+                "time (malleable)",
+                "tissue × time (malleable)",
+                "intervention × time (malleable)",
+                "tissue × time × intervention (malleable)"))
+
+vp <- vp_results |> dplyr::mutate(n = n()) |> 
+  dplyr::group_by(category) |>
+  dplyr::reframe(n_group = n(),
+                   n = n) |> 
+  dplyr::distinct() |> 
+  dplyr::mutate(perc = n_group/n) |> 
+  dplyr::mutate(category = factor(category, levels = categories)) |> 
+  dplyr::arrange(desc(category)) |> 
+  dplyr::mutate(
+    cum_perc = cumsum(perc),
+    mid_perc = cum_perc - perc/2 # middle of each bar
+  ) 
+
+nonvar <- data.frame(category = rep("non-variable (stable)",length(non_variable_cpgs)),
+                     cg = non_variable_cpgs)
+
+col_categories <- c(pal(length(vp$category)-1), 'grey70')
+names(col_categories) <- categories
+
+variance_categories <- col_categories
+names(variance_categories) <- rev(c("N/A",
+                                    "subjectId", "sampletype",
+                                    "studyarm", "studyarm:sampletype",
+                                    "Residuals",
+                                    "visitId", "sampletype:visitId",
+                                    "studyarm:visitId",
+                                    "sampletype:visitId:studyarm"))
+mapping_variance_categories <- rev(c("N/A",
+                                   "individual",
+                                   "tissue",
+                                   "intervention arm",
+                                   "tissue × intervention arm",
+                                   "residual", 
+                                   "time",
+                                   "tissue × time",
+                                   "intervention arm × time",
+                                   "tissue × time × intervention arm"))
+
+
+# Allocation to categories
+vp <- vp_results |> dplyr::mutate(n = n()) |> 
+  dplyr::group_by(category) |>
+  dplyr::reframe(n_group = n(),
+                   n = n) |> 
+  dplyr::distinct() |> 
+  dplyr::mutate(perc = n_group/n) |> 
+  dplyr::mutate(category = factor(category, levels = categories)) |> 
+  dplyr::arrange(desc(category)) |> 
+  dplyr::mutate(
+    cum_perc = cumsum(perc),
+    mid_perc = cum_perc - perc/2 # middle of each bar
+  ) 
+
+
+b1 <- vp |> 
+  ggplot(aes(x = '',
+             y = perc,
+             fill = category)) +
+  geom_col(alpha = 0.6,
+           width = 0.3) +
+  geom_text_repel(
+    aes(y = mid_perc, label = category,
+        color = category),
+    nudge_x = 0.7,
+    force_pull = 2,
+    hjust = 'left',
+    direction = "y",
+    segment.size = 0.8,
+    segment.alpha = 0.5,
+    size = 3.5,
+    box.padding = 0.3,
+    show.legend = FALSE
+  ) +
+  theme_minimal() +
+  theme(legend.position = 'none',
+        axis.ticks.x = element_blank(),
+        panel.grid = element_blank()) +
+  # scale_fill_brewer(palette = 'RdBu',
+  #                   aesthetics = c('colour', 'fill')) +
+  scale_fill_manual(values = col_categories, aesthetics = c('colour', 'fill')) +
+  expand_limits(x = c(1,5)) +
+  labs(x = '',
+       y = '% of total allocations')
+
+vp_grouped <- vp_results |> 
+  dplyr::group_by(category) |> 
+  dplyr::mutate(name = paste0(category, ', n = ', n())) |> 
+  dplyr::summarise(across(c(2:10), mean),
+                   label = dplyr::first(name)) |> 
+  tidyr::pivot_longer(sampletype:Residuals,
+                      names_to = 'name',
+                      values_to = 'value')
+
+tmp <- expand.grid(category = 'non-variable (stable)',
+            name = c(unique(vp_grouped$name), 'N/A'),
+            label = paste0('non-variable (stable), n = ', length(non_variable_cpgs)))
+tmp$value <-c(rep(0, length(unique(vp_grouped$name))), 1)
+
+vp_grouped <- rbind(vp_grouped, tmp) |> 
+  dplyr::mutate(name = factor(name, levels = rev(c("subjectId", "studyarm", "sampletype", "visitId",
+                                               "studyarm:sampletype", "studyarm:visitId",
+                                               "sampletype:visitId", "sampletype:visitId:studyarm",
+                                               "Residuals",
+                                               "N/A"))),
+                category = factor(category, levels = rev(categories))) |> 
+  dplyr::arrange(category)
+
+
+b2 <- vp_grouped |> 
+  ggplot(aes(x = category,
+             y = value,
+             fill = name)) +
+  geom_col() +
+  theme_bw() +
+  theme(panel.grid = element_blank())+
+  coord_flip(expand = F) +
+  labs(y = 'mean variance explained',
+      x = '') +
+  scale_fill_manual(values = variance_categories, aesthetics = c('colour', 'fill'),
+                    name = '') +
+  scale_x_discrete(labels = unique(vp_grouped$label))
+
+
+ggsave(b1, file = 'figures/panels/cpg-vp-category.pdf',
+       width = 5, height = 3.5, dpi = 300)  
+ggsave(b2, file = 'figures/panels/cpg-vp-category-meanvar.pdf',
+       width = 7, height = 3.5, dpi = 300)  
+
+# Variance long plots-----
+long <- vp_results |> tidyr::pivot_longer(sampletype:Residuals,
+                                          names_to = 'component', values_to = 'value')
+
+# ## Histogram -------
+# c <-long |> 
+#   dplyr::filter(category != 'non-variable (stable)') |> 
+#   ggplot(aes(x = value,
+#              fill = component,
+#              group = component)) +
+#   geom_histogram(bins = 50) +
+#   facet_wrap(~component) +
+#   scale_fill_manual(values = variance_categories, aesthetics = c('colour', 'fill')) +
+#   theme_bw() +
+#   theme(legend.position = 'top') +
+#   labs(x = 'variance explained', y = 'n')
+# 
+# c2 <- long |> 
+#   dplyr::filter(category != 'non-variable (stable)') |> 
+#   ggplot(aes(x = value,
+#              colour = component)) +
+#   geom_density(bw = 0.01) +
+#   scale_fill_manual(values = variance_categories, aesthetics = c('colour', 'fill')) +
+#   theme_bw() +
+#   theme(legend.position = 'none') +
+#   labs(x = 'variance explained', y = 'n')
+# 
+# ggsave(c, file = 'figures/panels/cpg-vp-histograms.pdf',
+#        width = 8, height = 6, dpi = 300)  
+
+# Density ridges ------
+a <- long |> 
+  ggplot(aes(x = value,
+             y = forcats::fct_reorder(component, -value),
+             fill = component,
+             colour = component,
+             height = after_stat(density))) +
+  geom_density_ridges(alpha = 0.7,
+                      bw = 0.02,
+                      scale = 2,
+                      stat = 'density') +
+  coord_cartesian(clip = "off") +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme_ridges() +
+  theme(legend.position = 'none',
+        axis.text = element_text(size = 10)) +
+  labs(x = 'variance explained',
+       y = '') +
+  scale_fill_manual(values = variance_categories,
+                    aesthetics = c('colour', 'fill'))
+
+ggsave(a, file = 'figures/panels/cpg-vp-ridges.pdf',
+       width = 4, height = 3.5, dpi = 300)  
+```
+
+
+## meQTL
+
+```{r}
+load('data/godmc_unique_mqtls.Rdata')
+load('data/epic_unique_mqtls.Rdata')
+
+individual <- vp_results |> 
+  dplyr::filter(category == 'individual (stable)') |> 
+  # dplyr::filter(dominant == 'dominant') |> 
+  dplyr::select(cg) 
+
+individual$godmc <- individual$cg %in% unique_mqtl
+individual$epic <- individual$cg %in% unique_mqtl_epic
+individual$group <- ifelse(individual$godmc==T & individual$epic==T,
+                           "both GoDMC & EPIGEN",
+                           ifelse(individual$godmc==T & individual$epic==F,
+                                  "GoDMC",
+                                  ifelse(individual$epic==T,
+                                         "EPIGEN",
+                                         "new")))
+
+## Venn diagram  (exploration only) ------------
+# library(ggvenn)
+# 
+# sets <- list(godmc = unique_mqtl,
+#              epic = unique_mqtl_epic,
+#              new = vp_results[vp_results$category=='individual (stable)',]$cg)
+
+
+individual_summary <- individual |> 
+  dplyr::mutate(n_total = n()) |> 
+  dplyr::group_by(group) |> 
+  dplyr::reframe(n = n(),
+                 prop = n/n_total) |> 
+  dplyr::distinct() |> 
+  dplyr::mutate(group = factor(group, levels = c("GoDMC", "EPIGEN", "both GoDMC & EPIGEN", "new"))) |> 
+  dplyr::arrange(desc(group)) |> 
+  dplyr::mutate(text_y = cumsum(prop) - prop/2) |>
+  dplyr::mutate(label = paste0(group, "\nn=", n, "\n(", signif(prop*100, 3), "%)")) |> 
+  dplyr::ungroup()
+
+plot <- individual_summary |> 
+  ggplot(aes(x = '',
+               y = prop,
+               fill = group)) +
+    geom_col(alpha  = 0.8) + 
+    geom_text_repel(aes(label = label,
+                        y = text_y,
+                        colour = group),
+                    nudge_x = 0.9,hjust = 0,
+                    segment.size = 0.2,
+                    segment.curvature = -1e-20,
+                    size = 3.2) +
+    coord_polar(theta = 'y') +
+    theme_void() +
+    theme(legend.position = 'none') +
+  scale_fill_brewer(palette = 'Set1',
+                    aesthetics = c('colour', 'fill'))
+
+
+ggsave(plot, file = 'figures/panels/meqtl.pdf',
+       width = 4, height = 3.5, dpi = 300)  
+
+new <- individual[individual$group=='new',]$cg
+
+### Example meQTL CpGs
+g <- vp_top |> 
+  dplyr::filter(category=='individual (stable)' & cg %in% new) |> 
+  dplyr::arrange(subjectId) |> 
+  dplyr::slice(1:3) |> dplyr::pull(cg)
+
+meqtl <- pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+  ggplot(aes(
+    x = subjectId.x,
+    # x = forcats::fct_reorder(subjectId.x, beta),
+             y = beta)) +
+  geom_point(aes(colour = sampletype.x),
+             alpha = 0.5,
+             size = 0.8) +
+  facet_wrap(~cg) +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid = element_blank(),
+        legend.position = 'top') +
+  scale_colour_manual(values = cols[c(1, 2, 6)], name = 'sampletype') +
+  labs(x= 'subjectId', y = 'beta')
+
+ggsave(meqtl, file = 'figures/panels/meqtl-examples.pdf',
+       width = 7, height = 3.5, dpi = 300)  
+```
+
+
+## Tissue 
+
+```{r}
+## Association with IC?
+tissue_stab <- vp_results |> dplyr::filter(category == 'tissue (stable)')
+
+# table(tissue_stab$celltype_allocation)
+# x <- tissue_stab[tissue_stab$celltype_allocation=='epithelial composition' & tissue_stab$cg %in% vp_top$cg,] # sanity checked
+
+tissue_summary <- tissue_stab |> 
+  dplyr::mutate(n_total = n()) |> 
+  dplyr::group_by(celltype_allocation) |> 
+  dplyr::reframe(n = n(),
+                 prop = n/n_total) |> 
+  dplyr::distinct() |> 
+  dplyr::mutate(group = factor(celltype_allocation, levels = c("epithelial composition", "other"))) |> 
+  dplyr::arrange(desc(group)) |> 
+  dplyr::mutate(text_y = cumsum(prop) - prop/2) |>
+  dplyr::mutate(label = paste0(group, "\nn=", n, "\n(", signif(prop*100, 3), "%)")) |> 
+  dplyr::ungroup()
+  
+
+plot <- tissue_summary |> 
+  ggplot(aes(x = '',
+               y = prop,
+               fill = group)) +
+    geom_col(alpha  = 0.8) + 
+    geom_text_repel(aes(label = label,
+                        y = text_y,
+                        colour = group),
+                    nudge_x = 0.9,hjust = 0,
+                    segment.size = 0.2,
+                    segment.curvature = -1e-20,
+                    size = 3.2) +
+    coord_polar(theta = 'y') +
+    theme_void() +
+    theme(legend.position = 'none') +
+  scale_fill_brewer(palette = 'Dark2',
+                    aesthetics = c('colour', 'fill'))
+
+ggsave(plot, file = 'figures/panels/tissue_allocation.pdf',
+       width = 4, height = 3.5, dpi = 300)  
+
+## Sampletype
+g <- vp_top |> 
+  dplyr::filter(category == 'tissue (stable)') |> 
+  dplyr::arrange(sampletype) |> 
+  dplyr::slice(1:3) |> 
+  dplyr::pull(cg)
+# g <- 'cg09184899'
+
+tissue1 <- pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+ ggplot(aes(x = subjectId.x,
+             y = beta)) +
+  geom_point(aes(colour = sampletype.x),
+             alpha = 0.5,
+             size = 0.8) +
+  facet_wrap(~cg) +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid = element_blank(),
+        legend.position = 'top') +
+  scale_colour_manual(values = cols[c(1, 2, 6)], name = 'sampletype') +
+  labs(x= 'subjectId', y = 'beta')
+
+ggsave(tissue1, file = 'figures/panels/tissue-examples.pdf',
+       width = 7, height = 3.5, dpi = 300)  
+
+
+tissue2 <- pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+ ggplot(aes(x = celltype_Epi,
+            y = beta)) +
+  geom_point(aes(colour = sampletype.x),
+             alpha = 0.5,
+             size = 0.8) +
+  facet_wrap(~cg) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'top') +
+  scale_colour_manual(values = cols[c(1, 2, 6)], name = 'sampletype') +
+  labs(x= 'immune cell proportion', y = 'beta')
+ggsave(tissue2, file = 'figures/panels/tissue-examples2.pdf',
+       width = 7, height = 3.5, dpi = 300)  
+
+pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+ ggplot(aes(x = sampletype.x,
+             y = beta)) +
+  gghalves::geom_half_violin(aes(fill = sampletype.x),
+                             alpha = 0.6) +
+  gghalves::geom_half_point_panel(aes(colour = sampletype.x)) +
+  facet_wrap(~cg) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  scale_colour_manual(values = cols[c(1,4, 7)],
+                      aesthetics = c("colour", "fill")) +
+  labs(x= 'subjectId', y = 'beta',
+       title = 'tissue-specific (stable) CpGs')
+```
+
+## Tissue x time x intervention
+
+```{r}
+# Overview: which tissue?
+tmp <- vp_results |> 
+  dplyr::filter(category == 'tissue × time × intervention (malleable)') |> 
+  dplyr::mutate(total_n = n()) |> 
+  dplyr::group_by(driver_tissue_screen) |> 
+  dplyr::reframe(n = n(),
+                 prop = n/total_n) |>
+  dplyr::distinct() |> 
+  dplyr::arrange(desc(driver_tissue_screen)) |> 
+  dplyr::mutate(text_y = cumsum(prop) - prop/2) |>
+  dplyr::mutate(label = paste0(driver_tissue_screen, "\nn=", n, "\n(", signif(prop*100, 3), "%)")) |> 
+  dplyr::ungroup()
+
+out <- tmp |> 
+  ggplot(aes(x = '',
+               y = prop,
+               fill = driver_tissue_screen)) +
+    geom_col(alpha  = 0.8) + 
+    geom_text_repel(aes(label = label,
+                        y = text_y,
+                        colour = driver_tissue_screen),
+                    nudge_x = 0.9,hjust = 0,
+                    segment.size = 0.2,
+                    segment.curvature = -1e-20,
+                    size = 3.2) +
+    coord_polar(theta = 'y') +
+    theme_void() +
+    theme(legend.position = 'none') +
+  scale_fill_natparks_d(name = 'Volcanoes',
+                        aesthetics = c("fill", 'color')) +
+  scale_color_natparks_d(name = 'Volcanoes',
+                        aesthetics = c("fill", 'color'))
+
+ggsave(out, file = 'figures/panels/time_tissue_intervention-alloc.pdf',
+       width = 4, height = 3.5, dpi = 300)  
+
+# Find top one each?
+tmp <- vp_top |> 
+  dplyr::filter(category=='tissue × time × intervention (malleable)') |> 
+  dplyr::arrange(`sampletype:visitId:studyarm`)
+
+# intervention x time x tissue
+g <- vp_top |> 
+  dplyr::filter(category=='tissue × time × intervention (malleable)') |> 
+  dplyr::arrange(`sampletype:visitId:studyarm`) |> 
+  dplyr::slice(1, 4, 6) |> 
+  dplyr::pull(cg)
+
+g <- c("cg05218470", # buccal
+       "cg10917149", # blood
+       "cg22348345") # cervical
+
+plot <- pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+  ggplot(aes(x = visitId.x,
+             y = beta)) +
+  geom_boxplot(aes(fill = studyarm),
+               # position = position_identity(),
+               alpha = 0.5,
+               outlier.shape = NA) +
+  ggh4x::facet_grid2(
+    rows = vars(sampletype.x),
+    cols = vars(cg),
+    scales = "free",
+    independent = "all"   # ← lets x and y be independent across panels
+  ) +
+  theme_bw() +
+  theme(legend.position = 'top') + 
+  theme(strip.placement = "outside") +
+  labs(x = '',
+       y = 'beta',
+       title = 'intervention x time x tissue') +
+  scale_fill_manual(values = cols[c(3, 8)])
+
+
+plot
+
+ggsave(plot, file = 'figures/panels/time_tissue_intervention.pdf',
+       width = 7, height = 6, dpi = 300)  
+
+```
+
+## Other
+
+```{r}
+## Intervention
+g <- vp_top |> dplyr::filter(category=='intervention (stable)') |> 
+  dplyr::arrange(desc(studyarm)) |> 
+  dplyr::slice(1:3) |> 
+  dplyr::pull(cg)
+
+pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+ ggplot(aes(x = sampletype.x,
+             y = beta)) +
+  geom_boxplot(aes(fill = studyarm)) +
+  facet_wrap(~cg) +
+  scale_fill_manual(values = cols[c(3, 8)]) +
+  labs(x= 'subjectId', y = 'beta',
+       title = 'intervention-specific (stable) CpGs')
+
+# non variable
+g <- vp_top[vp_top$category=='non-variable (stable)',]$cg[1:3]
+
+pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+  ggplot(aes(x = forcats::fct_reorder2(subjectId.x, cg, beta),
+             y = beta)) +
+  geom_point(aes(colour = sampletype.x)) +
+  facet_wrap(~cg) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  scale_colour_manual(values = cols[c(1,4, 7)]) +
+  labs(x= 'subjectId', y = 'beta',
+       title = 'nonvariable CpGs')
+
+# non variable
+g <- vp_top[vp_top$category=='non-variable (stable)',]$cg[1:3]
+
+pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+  ggplot(aes(x = forcats::fct_reorder2(subjectId.x, cg, beta),
+             y = beta)) +
+  geom_point(aes(colour = sampletype.x)) +
+  facet_wrap(~cg) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  scale_colour_manual(values = cols[c(1,4, 7)]) +
+  labs(x= 'subjectId', y = 'beta',
+       title = 'nonvariable CpGs')
+
+# time
+g <- vp_top[vp_top$category=='time (malleable)',]$cg[1:3]
+
+pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+  ggplot(aes(x = visitId.x,
+             y = beta)) +
+  geom_boxplot((aes(fill = visitId.x)),
+                position = position_dodge()) +
+  facet_wrap(cg~sampletype.x, scales = 'free',nrow = 3) +
+  labs(x = '', y = 'beta',
+       title = 'time-variant CpGs')
+
+# intervention x time
+g <- vp_top[vp_top$category=='intervention × time (malleable)',]$cg[1:3]
+
+pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+  ggplot(aes(x = studyarm,
+             y = beta)) +
+  geom_boxplot((aes(fill = visitId.x)),
+                position = position_dodge()) +
+  facet_wrap(cg~sampletype.x, scales = 'free',nrow = 3) +
+  labs(x = '', y = 'beta',
+       title = 'intervention x time-variant CpGs')
+
+
+# intervention x time
+g <-vp_top[vp_top$category=='tissue × intervention (stable)',]$cg[1:3]
+
+pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+  ggplot(aes(x = sampletype.x,
+             y = beta)) +
+  geom_boxplot(aes(fill = studyarm),
+              position = position_dodge()) +
+  scale_fill_manual(values = cols[c(3, 8)]) +
+  facet_wrap(~cg, scales = 'free') +
+  labs(x = '', y = 'beta',
+       title = 'tissue x intervention-variant CpGs')
+
+
+# tissue x time
+g <- vp_top[vp_top$category=='tissue × time (malleable)',]$cg[1:3]
+
+pheno_w_cpgs |> 
+  dplyr::filter(cg %in% g) |> 
+  ggplot(aes(x = sampletype.x,
+             y = beta)) +
+  geom_boxplot(aes(fill = visitId.x),
+              position = position_dodge()) +
+  # scale_fill_manual(values = cols[c(3, 8)]) +
+  facet_wrap(~cg, scales = 'free') +
+  labs(x = '', y = 'beta',
+       title = 'tissue x intervention-variant CpGs')
+```
+

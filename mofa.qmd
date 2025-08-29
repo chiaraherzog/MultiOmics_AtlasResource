@@ -1,0 +1,785 @@
+---
+title: "Figure 4 | MOFA integration"
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+```{r libs, eval = F}
+packages <- c('MOFA2', 'here', 'dplyr', 'ggplot2', "tidygraph", "ggraph", "patchwork", "ggtext", "ggrepel")
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+library(dplyr)
+library(ggplot2)
+library(MOFA2)
+library(here)
+library(ggtext)
+cols <- c("#1b69a1", "#48a0af", "#71b5a9", "#ec6669", "#f39668", "#bd647d", "#832c9b", "#5f70a8", 'grey90')
+pal <- colorRampPalette(colors = cols[c(1, 2, 3, 5, 4, 6, 7, 8)])
+here::i_am('mofa.qmd')
+
+# ---- Load functions ----
+source("source/plotTopFactorWeights.R")
+
+# ---- Load trained baseline model ----
+model_path <- here('1-analyses/mofa/out', "baseline_mofa_medium.hdf5")
+mofa_base <- load_model(model_path)
+
+## Overall
+outfile <- here('1-analyses/mofa/out', "long_medium.hdf5")
+mofa_long <- load_model(outfile)
+
+## Grouped
+outfile <- here('1-analyses/mofa/out', "long_medium_grouped.hdf5")
+mofa_long_grouped <- load_model(outfile)
+
+# ---- Attach phenotype metadata ----
+pheno <- readRDS(here("1-analyses/mofa/out/features_base.Rdata"))
+pheno <- pheno[samples_metadata(mofa_base)$sample,]
+samples_metadata(mofa_base) <- cbind(samples_metadata(mofa_base),
+                                     pheno)
+pheno_w_mofa <- readRDS(here("1-analyses/mofa/out/pheno_w_mofa_baseline.Rdata"))
+pheno_w_mofa_long <- readRDS(here("1-analyses/mofa/out/pheno_w_mofa_long.Rdata"))
+pheno_w_mofa_long_grouped <- readRDS(here("1-analyses/mofa/out/pheno_w_mofa_long_grouped.Rdata"))
+
+# Functions -------------
+flattenCorrMatrix <- function(cormat) {
+  ut <- upper.tri(cormat, diag = T)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut]
+    )
+}
+```
+
+This code generates graphs for figure 4. MOFA analyses are run in 1-analyses/mofa/ scripts.
+
+# MOFA - Baseline
+
+::: {.panel-tabset}
+
+## Figure
+
+![](figures/Figure-4-MOFA-baseline.png)
+
+## Code 
+
+### Panel A, variance explained
+
+```{r base.variance.explained}
+# ## 1.  Panel A – Variance explained ------------------------
+# labels <- views_names(mofa_base)
+# names(labels) <- c("Blood methylation biomarkers",
+#                    "Buccal methylation biomarkers",
+#                    "Cervical methylation biomarkers",
+#                    "Flow cytometry (T cells)",
+#                    "Flow cytometry (white blood cells)",
+#                    "Saliva microbiome (ASVs)",
+#                    "Saliva metabolome",
+#                    "Stool microbiome (ASVs)",
+#                    "Urine metabolome",
+#                    "Methylation PCs (blood)",
+#                    "Methylation PCs (buccal)",
+#                    "Methylation PCs (cervical)")
+# 
+# 
+# a <- plot_variance_explained(mofa_base, show_values  = TRUE) +
+#   scale_fill_gradient(low = 'white', high = cols[7]) +
+#   scale_y_discrete(limits = paste0("Factor", 15:1)) +
+#   scale_x_discrete(labels = names(labels)[c(1:3, 10:12,
+#                                             4:6, 8,
+#                                             7, 9)],
+#                    limits = labels[c(1:3, 10:12,
+#                                      4:6, 8,
+#                                      7, 9)]) +
+#   theme(axis.text.x = element_text(angle = 90,
+#                                    hjust = 1))
+# 
+# ggsave(plot = a,
+#        filename = here("figures/panels/mofa-baseline-factor-variance.pdf"),
+#        width = 3.5, height = 4.5,
+#        dpi = 300)
+
+
+## Extract variance 
+var.df <- get_variance_explained(mofa_base,as.data.frame = T)
+
+## Sort by total variance explained -> extract order
+order <- var.df$r2_total |> 
+  dplyr::mutate(order = forcats::fct_reorder(view, -value)) |> 
+  dplyr::arrange(order) |> 
+  dplyr::pull(order)
+
+## Panel a: by factor ----------------
+a <- var.df$r2_per_factor |> 
+  dplyr::mutate(view = factor(view, levels = rev(levels(order)))) |> 
+  ggplot(aes(x = factor,
+             y = view,
+             fill = value)) +
+  geom_tile(color = 'black') +
+  scale_fill_gradient(low = 'white', high = cols[7],
+                      name = '% var. explained') +
+  scale_x_discrete(labels = c(1:10)) +
+  scale_y_discrete(labels = rev(c(
+                              "Buccal methylation scores",
+                              "Blood methylation scores",
+                              "Saliva microbiome (family level)",
+                              "Saliva metabolome",
+                              "Faecal microbiome (family level)",
+                              "Cervical methylation scores",
+                              'Flow cytometry (T cells)',
+                              "Flow cytometry (white blood cells)",
+                              "Urine metabolome",
+                              "Cervical methylation PCs",
+                              "Buccal methylation PCs",
+                              "Blood methylation PCs"))) +
+  theme_minimal() +
+  theme(axis.ticks = element_blank(),
+        legend.position = 'top',
+        legend.key.height = unit(4, "mm")) +
+  labs(x = 'Factor',
+       y = '')
+
+## Side panel: total variance ------------
+b <- var.df$r2_total |> 
+  ggplot(aes(x = forcats::fct_reorder(view, value),
+             y = value)) +
+  geom_col(fill = cols[7]) +
+  coord_flip() +
+  theme_minimal() +
+  scale_y_continuous(breaks = c(0, 25, 50)) +
+  theme(panel.grid = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.x = element_text(size = 10)) +
+  labs(y = '% var.\nexplained\n(total)',
+       x = '')
+
+plot <- (a|b) +
+  plot_layout(widths = c(1, 0.3))
+
+ggsave(plot = plot,
+       filename = here("figures/panels/mofa-baseline-variance.pdf"),
+       width = 5.5, height = 4,
+       dpi = 300)
+
+```
+
+### Panel B, Network graph (baseline)
+
+```{r base.network}
+## Load data (associations - regression)
+pairs_tbl_reg <- readRDS(here("1-analyses/mofa/out/pairs_tbl_regr.Rds")) |> 
+  dplyr::filter(q_value < 0.1)
+pairs_tbl <- readRDS(here("1-analyses/mofa/out/pairs_tbl_baseline.Rds")) |> 
+  dplyr::filter(q_value < 0.1)
+
+pairs_tbl <- pairs_tbl_reg |> dplyr::inner_join(pairs_tbl, by = c("factor_col", "feature_col")) |> 
+  dplyr::rename(q_value = q_value.x) |> 
+  dplyr::arrange(q_value)
+
+## Format and filter
+fdr.graph.df <- pairs_tbl |> 
+  dplyr::filter(!feature_col %in% c('bmi_at_consent',  'cig_before')) |> 
+  dplyr::rename(phenotype = feature_col,
+                factor = factor_col) |> 
+  dplyr::mutate(qlog  = -log10(q_value + 0.000000000001)) |> 
+  dplyr::select(factor, phenotype, q_value, qlog)  |> 
+  dplyr::rename(
+    from = factor,
+    to = phenotype,
+    fdr = qlog
+  ) |> 
+  dplyr::mutate(to = gsub("Functional.sports.exam_|Composite.methylation.scores..|Blood.haemogram_|Body.composition_|Skin.histology.and.transepidermal.water.loss.assay_|Vascular.and.body.sonography_", "", to))
+
+
+# Which factors are present?
+factors <- sort(as.numeric(gsub("Factor", "", unique(fdr.graph.df$from))))
+
+## Load annotation
+x <- read.table("data/vars_clinical.csv", sep = ",", header = T) |> 
+  dplyr::filter(x %in% fdr.graph.df$to) |> 
+  dplyr::rename(category = type)
+
+## Add annotations
+fdr.graph.df <- fdr.graph.df |> 
+  dplyr::left_join(dplyr::select(x, x, category, subtype, label),
+                   by = c("to" = "x"))
+
+
+
+## Generate edges
+### Factor > Category
+edges1 <- fdr.graph.df |>
+  dplyr::filter(grepl("Factor", from)) |>
+  dplyr::mutate(to = category) |>
+  dplyr::select(from, to) |>
+  dplyr::distinct()
+
+### Category > Subcategory
+edges1b <- fdr.graph.df |>
+  dplyr::filter(grepl("Factor", from)) |>
+  dplyr::mutate(from = category,
+                to = subtype) |>
+  dplyr::select(from, to) |>
+  dplyr::distinct()
+
+### Category > item
+edges2 <- fdr.graph.df |> 
+  dplyr::mutate(from = subtype) |> 
+  dplyr::select(from, to) |> 
+  dplyr::distinct()
+
+### Origin > Types
+edges0 <- data.frame(from = 'origin',
+                     to = unique(c(edges1$from, edges1$to)))
+
+### Final hierarchy:
+edges <- rbind(edges0, edges1b, edges2) 
+
+### Fix the order (otherwise Factor10 will come after Factor1, rather than Factor2)
+edgeorder <- edges$to[!grepl("Factor", edges$to)]
+edgeorder <- unique(edgeorder)
+edges <- edges |> 
+  dplyr::mutate(to = factor(to, levels = c(paste0("Factor", rev(factors)), 
+                                           edgeorder))) |> 
+  dplyr::arrange(to) |> 
+  dplyr::mutate(to = as.character(to))
+
+
+## Vertices (Annotation)
+vertices <- tibble(name = unique(c(edges$from, edges$to))) |> 
+  dplyr::arrange(name) |> 
+  dplyr::left_join(dplyr::select(x, x, label), by = c("name" = "x")) 
+
+### Fixing order again
+names <- vertices$name[!grepl("Factor", vertices$name)]
+vertices <- vertices |> 
+  dplyr::mutate(shortName = ifelse(!is.na(label), label, name),
+                name = factor(name, levels = c(paste0("Factor", rev(factors)),
+                                               names))
+  ) |> 
+  dplyr::arrange(name) |> 
+  dplyr::select(-label)
+
+## Connections
+connections <- fdr.graph.df |> 
+  dplyr::select(from, to, fdr) |> 
+  dplyr::distinct() |> 
+  dplyr::mutate(from = factor(from, levels = paste0("Factor", rev(factors)))) |> 
+  dplyr::arrange(from)
+
+library(ggraph)
+library(igraph)
+
+## Construct graphs
+fdr.hier.graph <- graph_from_data_frame(edges, directed = T, vertices = vertices)
+fdr.graph <- graph_from_data_frame(connections, directed = T, vertices = vertices)
+
+p.dend <- ggraph(fdr.hier.graph, layout = "dendrogram", circular=T, offset=200) 
+p.dend$data$angle <- 90 - atan2(p.dend$data$x, p.dend$data$y)*180/pi 
+p.dend$data$hjust <- ifelse(p.dend$data$angle > 90 & p.dend$data$angle <270, 1, 0)
+p.dend$data$angle <- ifelse(p.dend$data$angle > 90 & p.dend$data$angle <270,  p.dend$data$angle+180, p.dend$data$angle)
+# 
+# p.dend + geom_edge_link()+
+#   geom_node_point(aes(filter=leaf), alpha=0.3) +
+#   geom_node_text(aes(label=name, filter=!leaf), angle=0, hjust=0, size=2)
+
+
+# p.dend + geom_conn_bundle(data = get_con(from=match(connections$from, vertices$name),
+#                                          to=match(connections$to, vertices$name) ,
+#                                          fdr=connections$fdr),
+#                           aes(col=name), alpha=0.7, tension=0.9, width=1, show.legend = F) +
+#   geom_node_point(aes(filter=leaf), alpha=0.3) +
+#   geom_node_text(aes( x*1.03, y=y*1.03,  label=name, filter=name %in% paste0("Factor",1:14), angle=angle, hjust=hjust), size=2) +
+#   scale_edge_color_manual(values = pal(15), limits=paste0("Factor", 1:14)) +
+#   coord_fixed() +
+#   theme_void() +
+#   theme(plot.margin=unit(c(0,0,0,0),"cm")) +
+#   expand_limits(x = c(-1.2, 1.2), y = c(-1.2, 1.2))
+# 
+# 
+# p.dend + geom_conn_bundle(data = get_con(from=match(connections$from, vertices$name),
+#                                          to=match(connections$to, vertices$name) ,
+#                                          fdr=connections$fdr),
+#                           aes(col=name), alpha=0.7, tension=0.9, width=1, show.legend = F) +
+#   geom_node_point(aes(filter=leaf), alpha=0.3) +
+#   geom_node_text(aes(label=name, filter=!leaf & !name %in% "origin"), hjust=0.5, size=2)+
+#   geom_node_text(aes( x*1.03, y=y*1.03, label=name, filter=name %in% paste0("Factor",1:14), angle=angle, hjust=hjust), size=2)+
+#   scale_edge_color_manual(values = pal(15), limits=paste0("Factor", 1:14)) +
+#   coord_fixed() +
+#   theme_void() +
+#   theme(plot.margin=unit(c(0,0,0,0),"cm")) +
+#   expand_limits(x = c(-1.2, 1.2), y = c(-1.2, 1.2))
+
+
+
+p <- p.dend + geom_conn_bundle(data = get_con(from=match(connections$from, vertices$name),
+                                         to=match(connections$to, vertices$name) ,
+                                         fdr=connections$fdr),
+                          aes(col=name,
+                              edge_width = fdr),
+                          alpha=0.6, tension=0.9,
+                          # width=1,
+                          show.legend = T) +
+  geom_node_point(aes(filter=leaf), alpha=0.3) +
+  geom_node_text(aes( x*1.03, y=y*1.03, 
+                      label=shortName,
+                      filter=leaf,
+                      angle=angle,
+                      hjust=hjust), size=3.5)+
+  scale_edge_color_manual(values = pal(9), limits=paste0("Factor", factors)) +
+  scale_edge_width(range = c(0.5, 3.5),breaks = c(3, 6, 9, 12)) +
+  coord_fixed() +
+  theme_void() +
+  theme(legend.position = 'top') +
+  theme(plot.margin=unit(c(0,0,0,0),"cm")) +
+  expand_limits(x = c(-1.2, 1.2), y = c(-1.2, 1.2))
+
+p
+
+pdf(file = "figures/panels/mofa-baseline-network.pdf",
+    width = 4.5,
+    height = 6)
+print(p)
+dev.off()
+```
+
+### Panel C, Factor scatter
+
+```{r base.factor.scatter}
+factor_baseline <- pheno_w_mofa |> 
+  ggplot(aes(x = -Factor1,
+             y = Factor2)) +
+  ggforce::geom_mark_ellipse(aes(fill = studyarm,
+                                 label = studyarm),
+                             alpha = 0.1,
+                             colour = NA) +
+  geom_point(aes(colour = age_at_consent,
+                 shape = studyarm),
+             size = 2.2,
+             alpha = 0.8) + 
+  scale_color_gradientn(colours = cols[c(1, 2, 3, 5, 4)],
+                        name = 'age') +
+  scale_fill_manual(values = cols[c(2, 8)],
+                    name = 'study arm') +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  scale_shape_manual(values = c(19, 1),
+                    name = 'study arm') +
+  coord_cartesian(xlim = c(-0.4, 0.3),
+                  ylim = c(-0.3, 0.3))
+
+
+ggsave(plot = factor_baseline,
+       filename = here("figures/panels/mofa-baseline-factorscatter.pdf"),
+       width = 5, height = 4,
+       dpi = 300)
+
+
+
+# Subplots for the top weights:
+f1 <- plotTopFactorWeights(mofa = mofa_base,
+                           factorFilter = 1,
+                           orientation = 'landscape')
+
+ggsave(plot = f1$plot,
+       filename = here("figures/panels/mofa-baseline-f1heat.pdf"),
+       width = 7, height = 4,
+       dpi = 300)
+
+
+f2 <- plotTopFactorWeights(mofa = mofa_base,
+                           factorFilter = 2)
+ggsave(plot = f2$plot,
+       filename = here("figures/panels/mofa-baseline-f2heat.pdf"),
+       width = 4.25, height = 7,
+       dpi = 300)
+```
+
+### Panels d-g, Menopause
+
+```{r suppl.f4.menopause.baseline}
+# Factor 4
+f4 <- plotTopFactorWeights(mofa = mofa_base,
+                           factorFilter = 4,
+                           top_n = 20)
+
+pdf("figures/panels/mofa-baseline_f4_weights.pdf",
+    width = 4.5, height = 7)
+print(f4)
+dev.off()
+
+f4_meno <- pheno_w_mofa |> 
+  ggplot(aes(y = Factor4,
+             x = menopause)) +
+  geom_boxplot(aes(fill = studyarm)) +
+  ggpubr::stat_compare_means(label.y.npc = 0.95) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none') +
+  scale_fill_manual(values = cols[c(3, 8)]) +
+  scale_x_discrete(labels = c("pre", "post")) +
+  labs(x = 'menopause status', y = 'Factor 4')
+
+pdf("figures/panels/mofa-baseline_f4_meno.pdf",
+    width = 3.1, height = 3.5)
+print(f4_meno)
+dev.off()
+
+
+# Individual weights
+load(here("data/data_raw.Rdata"))
+library(MultiAssayExperiment)
+data_m0 <- data[,data$visitId=='M0',c(6, 10)]
+data_m0_d <- data.frame(wideFormat(data_m0, colDataCols = c("subjectId")))
+pheno_w_mofa_x <- pheno_w_mofa |> dplyr::left_join(data_m0_d)
+load("data/vars.Rdata") # to look up names
+
+a <- pheno_w_mofa_x |> 
+  ggplot(aes(x = menopause,
+             y = Flow.cytometry..T.cell.staining_lymphocytes_single_cells_live_t_cells_cd8_t_cells_cd57neg_cd28pos)) +
+  geom_boxplot(aes(fill = studyarm)) +
+  ggpubr::stat_compare_means(label.y.npc = 0.95) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none',
+        axis.title.y = element_markdown()) +
+  scale_fill_manual(values = cols[c(3, 8)]) +
+  scale_x_discrete(labels = c("pre", "post")) +
+  labs(x = 'menopause',
+       y = 'CD57<sup>-</sup> CD28<sup>+</sup> CD8<sup>+</sup> T cells')
+
+pdf("figures/panels/mofa-baseline_f4_cd57cd28.pdf",
+    width = 3.1, height = 3.5)
+print(a)
+dev.off()
+
+
+a <- pheno_w_mofa_x |> 
+  ggplot(aes(x = menopause,
+             y = Flow.cytometry..T.cell.staining_lymphocytes_single_cells_live_t_cells_cd8_t_cells_cd57pos_cd28neg)) +
+  geom_boxplot(aes(fill = studyarm)) +
+  ggpubr::stat_compare_means(label.y.npc = 0.95) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none', axis.title.y = element_markdown()) +
+  scale_fill_manual(values = cols[c(3, 8)]) +
+  scale_x_discrete(labels = c("pre", "post")) +
+  labs(x = 'menopause',
+       y = 'CD57<sup>+</sup> CD28<sup>-</sup> terminally differentiated CD8<sup>+</sup> T cells')
+
+pdf("figures/panels/baseline_f4_cd57term.pdf",
+    width = 3.1, height = 3.5)
+print(a)
+dev.off()
+```
+
+
+## Supplementary Figures
+
+### Factors 1 & 2
+
+![](figures/Figure-S-MOFA-Baseline.png)
+
+```{r}
+f1_cig <- pheno_w_mofa |> 
+  ggplot(aes(x = Factor1,
+             y = cig_before_all)) +
+  geom_point(aes(colour = studyarm)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'top') +
+  scale_colour_manual(values = cols[c(3, 8)]) +
+  labs(title = 'Factor 1',
+       x = 'Factor 1', y = 'cigarettes / day\n(baseline)')
+
+f1_bmi <- pheno_w_mofa |> 
+  ggplot(aes(x = Factor1,
+             y = bmi_at_consent)) +
+  geom_point(aes(colour = studyarm)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none') +
+  scale_colour_manual(values = cols[c(3, 8)]) +
+  labs(title = 'Factor 1',
+       x = 'Factor 1', y = 'BMI\n(baseline)')
+
+
+f2_age <- pheno_w_mofa |> 
+  ggplot(aes(x = Factor2,
+             y = age_at_consent)) +
+  geom_point(aes(colour = studyarm)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none') +
+  scale_colour_manual(values = cols[c(3, 8)]) +
+  labs(title = 'Factor 2',
+       x = 'Factor 2', y = 'age')
+
+
+f2_imt <- pheno_w_mofa |> 
+  ggplot(aes(x = Factor2,
+             y = Vascular.and.body.sonography_imt_mean)) +
+  geom_point(aes(colour = studyarm)) +
+  ggpubr::stat_cor() +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none') +
+  scale_colour_manual(values = cols[c(3, 8)]) +
+  labs(title = 'Factor 2',
+       x = 'Factor 2', y = 'intima-media thickness')
+
+## Save panels
+row1 <- (f1_cig | f1_bmi | f2_age | f2_imt) & theme(plot.title = element_blank())
+
+pdf("figures/panels/suppl-mofa-baseline_row1.pdf",
+    width = 11, height = 3.5)
+print(row1)
+dev.off()
+
+ggsave("figures/Figure-S-MOFA-Baseline.png",
+       plot = row1,
+       width = 11.5,
+       height = 3.5)
+```
+
+### Factor 4 - Menopause
+
+![](figures/Figure-S-Menopause-Baseline.png)
+
+```{r suppl.f4.menopause.baseline}
+# Individual weights
+load(here("data/data_raw.Rdata"))
+library(MultiAssayExperiment)
+data_m0 <- data[,data$visitId=='M0',c(6, 10)]
+data_m0_d <- data.frame(wideFormat(data_m0, colDataCols = c("subjectId")))
+pheno_w_mofa_x <- pheno_w_mofa |> dplyr::left_join(data_m0_d)
+load("data/vars.Rdata") # to look up names
+
+a <- pheno_w_mofa_x |> 
+  ggplot(aes(x = age_at_consent,
+             y = Flow.cytometry..T.cell.staining_lymphocytes_single_cells_live_t_cells_cd8_t_cells_cd57neg_cd28pos)) +
+  geom_point(aes(colour = menopause,
+                 shape = menopause)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none',
+        axis.title.y = element_markdown()) +
+  scale_colour_manual(values = cols[c(5, 7)]) +
+  labs(x = 'age',
+       y = 'CD57<sup>-</sup> CD28<sup>+</sup> CD8<sup>+</sup> T cells')
+
+b <-pheno_w_mofa_x |> 
+  ggplot(aes(x = Factor4,
+             y = Flow.cytometry..T.cell.staining_lymphocytes_single_cells_live_t_cells_cd8_t_cells_cd57neg_cd28pos)) +
+  geom_point(aes(colour = menopause,
+                 shape = menopause)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'top',
+        axis.title.y = element_markdown()) +
+  scale_colour_manual(values = cols[c(5, 7)]) +
+  labs(x = 'Factor 4',
+       y = 'CD57<sup>-</sup> CD28<sup>+</sup> CD8<sup>+</sup> T cells')
+
+
+c <- pheno_w_mofa_x |> 
+  ggplot(aes(x = age_at_consent,
+             y = Flow.cytometry..T.cell.staining_lymphocytes_single_cells_live_t_cells_cd8_t_cells_cd57pos_cd28neg)) +
+  geom_point(aes(colour = menopause,
+                 shape = menopause)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none',
+        axis.title.y = element_markdown()) +
+  scale_colour_manual(values = cols[c(5, 7)]) +
+  labs(x = 'age',
+       y = 'CD57<sup>+</sup> CD28<sup>-</sup> terminally differentiated CD8<sup>+</sup> T cells')
+
+d <-pheno_w_mofa_x |> 
+  ggplot(aes(x = Factor4,
+             y = Flow.cytometry..T.cell.staining_lymphocytes_single_cells_live_t_cells_cd8_t_cells_cd57pos_cd28neg)) +
+  geom_point(aes(colour = menopause,
+                 shape = menopause)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none',
+        axis.title.y = element_markdown()) +
+  scale_colour_manual(values = cols[c(5, 7)]) +
+  labs(x = 'Factor 4',
+       y = 'CD57<sup>+</sup> CD28<sup>-</sup> terminally differentiated CD8<sup>+</sup> T cells')
+
+plot <- (b|a|d|c) + plot_annotation(tag_levels = 'a') &
+    theme(plot.tag = element_text(face = 'bold'))
+
+pdf("figures/panels/suppl-mofa-menopause.pdf",
+    width = 12.6, height = 4)
+print(plot)
+dev.off()
+
+ggsave(plot = plot, filename = "figures/Figure-S-Menopause-Baseline.png",
+    width = 12.6, height = 4)
+```
+
+### Factor 7, 9
+
+![](figures/Figure-S-Baseline-F7F9.png)
+
+```{r suppl.f7f9}
+f7 <- plotTopFactorWeights(mofa = mofa_base,
+                           factorFilter = 7,
+                           top_n = 20)
+f9 <- plotTopFactorWeights(mofa = mofa_base,
+                           factorFilter = 9,
+                           top_n = 20)
+
+row2 <- ((f7$plot + labs(title = 'Factor7'))| (f9$plot + labs(title = 'Factor9'))) + plot_layout(widths = c(1,1,1))
+
+## Save panels
+pdf("figures/panels/suppl-mofa-baseline_row2.pdf",
+    width = 11, height = 7)
+print(row2)
+dev.off()
+
+
+
+
+f7_ic <- pheno_w_mofa |> 
+  ggplot(aes(x = Factor7,
+             y = Composite.methylation.scores..buccal_ic)) +
+  geom_point(aes(colour = studyarm)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none') +
+  scale_colour_manual(values = cols[c(2, 8)]) +
+  labs(title = 'Factor 7',
+       x = 'Factor 7', y = 'estimated immune proportion\n(buccal)')
+
+
+f4f7 <- (f7_ic) & theme(plot.title = element_blank())
+
+
+## Save panels
+pdf("figures/panels/suppl-mofa-baseline_f7.pdf",
+    width = 3, height = 3.5)
+print(f4f7)
+dev.off()
+
+
+f9_esr <- pheno_w_mofa |> 
+  ggplot(aes(x = Factor9,
+             y = Functional.sports.exam_sedrate)) +
+  geom_point(aes(colour = studyarm)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none') +
+  scale_colour_manual(values = cols[c(2, 8)]) +
+  labs(title = 'Factor 9',
+       x = 'Factor 9', y = 'erythrocyte sedimentation rate')
+
+f9_rel <- pheno_w_mofa |> 
+  ggplot(aes(x = Factor9,
+             y = Functional.sports.exam_relpower80hf)) +
+  geom_point(aes(colour = studyarm)) +
+  ggpubr::stat_cor(method = 'spearman') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = 'none') +
+  scale_colour_manual(values = cols[c(2, 8)]) +
+  labs(title = 'Factor 9',
+       x = 'Factor 9', y = 'relative capacity at 80% max HR')
+
+f9_correlation_plots <- (f9_esr + f9_rel)  & theme(plot.title = element_blank())
+
+pdf("figures/panels/suppl-mofa-baseline_f9_corr.pdf",
+    width = 5.5, height = 3)
+print(f9_correlation_plots)
+dev.off()
+
+
+## Pathway enrichment for F9
+enrich <- read.table("1-analyses/mofa/out/download-F9-pathway/pathway_results.csv", sep = ",", header = T)
+
+f9_enrich <- enrich |> 
+  dplyr::slice(1:5) |> 
+  dplyr::mutate(EO = Hits/Expected) |> 
+  ggplot(aes(x = EO,
+             y = forcats::fct_reorder(X, -Raw.p),
+             size = -log10(Raw.p))) +
+  geom_point(alpha = 0.9, colour = cols[1]) +
+  scale_size_continuous(name = '-log10(p)') +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  labs(x = 'observed/expected\nmetabolic pathways (Factor9)',
+       y = '')
+
+pdf("figures/panels/suppl-mofa-baseline_f9_enrich.pdf",
+    width = 6, height = 2)
+print(f9_enrich)
+dev.off()
+```
+
+## Supplementary Tables
+
+```{r}
+# Significant associations
+MOFA_assoc_out <- pairs_tbl |> 
+  dplyr::rename(p_value_regression = p,
+                regression_type = model,
+                q_value_regression = q_value,
+                p_value_alt = p_value,
+                q_value_alt = q_value.y,
+                effect_size_alt = effect_size,
+                effect_label_alt = effect_label,
+                feature = feature_col,
+                factor = factor_col) |> 
+  dplyr::select(factor, feature, beta, regression_type, p_value_regression, q_value_regression,
+                effect_size_alt, effect_label_alt, p_value_alt, q_value_alt) |> 
+  dplyr::arrange(factor, p_value_regression)
+writexl::write_xlsx(MOFA_assoc_out, path = 'out/MOFA_associations.xlsx')
+
+# Factor loadings (1:30 for all factors with significant associations.
+source('source/extractTopFeatureWeights.R')
+
+factors <- as.list(unique(as.numeric(gsub("Factor", "", MOFA_assoc_out$factor))))
+
+out <- bind_rows(lapply(factors, function(i){extractTopFactorweights(mofa_base, i)}),
+                 .id = 'id') |> 
+  dplyr::mutate(factor = case_match(id, 
+                                    "1" ~ "Factor1",
+                                    "2" ~ "Factor2",
+                                    "3" ~ "Factor4",
+                                    "4" ~ "Factor7",
+                                    "5" ~ "Factor9")) |> 
+  dplyr::select(-id)
+writexl::write_xlsx(out, path = 'out/MOFA_weights.xlsx')
+```
+
+:::

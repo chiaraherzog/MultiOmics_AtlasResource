@@ -1,0 +1,618 @@
+---
+title: "Methylation QC"
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+```{r}
+packages <- c('ggplot2', 'here', 'dplyr', 'ggtern', 'patchwork', 'viridis', 'purrr', 'ggnewscale', 
+              'MultiAssayExperiment')
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(here)
+library(viridis)
+library(MultiAssayExperiment)
+
+cols <- c("#1b69a1", "#48a0af", "#71b5a9", "#ec6669", "#f39668", "#bd647d", "#832c9b", "#5f70a8")
+
+here::i_am('methylation-qc.qmd')
+```
+
+::: {.panel-tabset}
+
+# Technical
+
+::: {.panel-tabset}
+
+## Figure
+
+![](figures/Figure-S2-Val-Meth.png)
+
+## Code
+
+
+
+```{r functions}
+#' @name pcaHeatmap
+#' @description
+#' This function creates a PCA heatmap from a FactoMineR PCA object and corresponding data frame.
+#' @param pcs a res.pca object output from FactoMineR
+#' @param pheno Wide dataframe where column 'primary' corresponds to rownames of the pc.object$ind$coord rownames.
+#' @return PCA heatmap
+
+pcaHeatmap <- function(pcs, pheno){
+  
+  # If mpstatrs, remove stars for simplification
+  if('mpstatrs' %in% colnames(pheno)){
+    pheno$mpstatrs <- gsub("[*]", "", pheno$mpstatrs)
+  }
+  
+  # Compute associations
+  mat <- matrix(ncol = ncol(pcs),
+                nrow = ncol(pheno))
+  colnames(mat) <- colnames(pcs)
+  rownames(mat) <- colnames(pheno)
+  
+  for (i in colnames(mat)){
+    for (j in rownames(mat)){
+      
+      if(is.numeric(pheno[,j])){
+        mat[j,i] <- cor.test(pcs[,i], pheno[,j])$p.value
+      } else {
+        mat[j,i] <- kruskal.test(pcs[,i], pheno[,j])$p.value
+      }
+      
+    }
+  }
+  
+  map <- mat
+  map <- apply(map, 2, function(t) ifelse(t < 0.05, t, NA))
+  
+  # Relabel columns and rows for better interpretability
+  labLookup =  c('interventionId' = 'interventionId',
+                 'subjectId' = 'subjectId',
+                 'visitId' = 'visitId',
+                 'sampletype' = 'sampletype',
+                 'batch' = 'batch',
+                 'plate' = 'plate',
+                 'sample_well' = 'sample well',
+                 'ic' = 'immune cell prop.',
+                 'time' = 'visitId (numerical)',
+                 'compliance' = 'visitId (categorical)',
+                 'comprate' = 'compliance rate (%)',
+                 'smoking_ever' = 'smoking (ever)',
+                 'mpstatrs' = 'menopause (at consent)',
+                 'age_at_consent' = 'age (at consent)',
+                 'bmi_at_consent' = 'BMI (at consent)', 
+                 'etohu_curr' = 'current alcohol units/wk',
+                 'diet' = 'dietary preference (at consent)',
+                 'pattern' = 'fasting pattern',
+                 'preg_ever' = 'pregnancy (ever)',
+                 'ocp_curr' = 'OCP (at consent)',
+                 'hrt_curr' = 'HRT (at consent)',
+                 'intactcurr' = 'intense activity (current/week)')
+  
+  ind <- match(rownames(map), names(labLookup))
+  rownames(map) <- labLookup[ind]
+  
+  groups <- case_when(rownames(map) %in% c("interventionId",
+                                   "subjectId",
+                                   "visitId",
+                                   "sample type",
+                                   "immune cell prop.",
+                                   "ic", "age (at consent)",
+                                   "BMI (at consent)", "smoking (ever)",
+                                   'menopause (at consent)') ~ "biological",
+                      TRUE ~ "technical")
+  
+  mapt <- t(map)
+  
+  # plot the heatmap
+  pcaheatmap <- Heatmap(-log10(mapt),
+                        column_split= groups,
+                        cluster_columns = F,
+                        row_names_side = 'left',
+                        cluster_rows = F,
+                        show_row_dend = F,
+                        show_column_dend = F,
+                        name = '-log10(p value)',
+                        na_col = 'white',
+          column_order = c("immune cell prop.", "subjectId", "sampletype", "interventionId", "visitId", "age (at consent)","menopause (at consent)", "BMI (at consent)", "smoking (ever)", 
+                           "batch", "plate", "sample well"),
+                        col = circlize::colorRamp2(breaks = seq(40, 1.3, length.out = 4),
+                                                   colors = rev(c("grey90", cols[c(8, 6, 5)])),
+                        ),
+                      
+                        row_names_gp = grid::gpar(fontsize = 9),
+                        border_gp = gpar(lwd = 0.5),
+          column_names_gp = gpar(fontsize = 9),
+          column_title_gp = gpar(fill = cols[c(2, 7)],
+                                 fontsize = 10,
+                                 col = "white",
+                                 hjust = 0,
+                                 border = NA),
+                        border = T)
+  
+  return(pcaheatmap)
+}
+```
+
+```{r methylation}
+folder <- "~/Dropbox/tg-data-prep"
+
+# pheno
+load(here(folder, "prep-scripts", "2-methylation", "4-output", "pheno_postQC_final.Rdata"))
+
+# Median intensities -----------------
+load(here(folder, "prep-scripts", "2-methylation", "2-report", "Log", "qc_merged.Rdata"))
+
+# merge and plot
+intensities <- as.data.frame(qc_merged) |> 
+  dplyr::inner_join(pheno, by = "basename") |> 
+  ggplot(aes(x = mMed,
+             y = uMed,
+             colour = sampletype)) +
+  geom_point(alpha = 0.6,
+             size = 1) +
+  scale_colour_manual(values = cols[c(1,2,6)],
+                      name = "") +
+  theme_minimal() +
+  theme(legend.position = "top",
+        aspect.ratio = 1) +
+  coord_cartesian(xlim = c(7, 14),
+                  ylim = c(7, 15)) +
+  labs(x = "Median intensity (methylated)",
+       y = "Median intensity (unmethylated)")
+
+# remove file
+rm(qc_merged);gc()
+
+# Beta density -----------------
+load("~/Dropbox/data/tirolgesund/beta_merged.Rdata")
+df = data.frame(matrix(nrow = 1,
+                       ncol = 4))
+colnames(df) <- c("sampletype", "sentrixId", "x", "y")
+
+pheno <- pheno |> 
+  dplyr::mutate(sentrixId = stringr::str_split(basename, "_", simplify = T)[,1])
+
+for (s in unique(pheno$sampletype)){
+  phenotmp <- pheno |> 
+    dplyr::filter(sampletype == s)
+  
+  for(b in unique(phenotmp$sentrixId)){
+  ind <- phenotmp[phenotmp$sentrixId==b,]$basename
+  dens <- density(beta_merged[,ind], bw = 0.02)
+  tmp <- data.frame(x = dens$x,
+                    y = dens$y,
+                    sampletype = rep(s, length(dens$x)),
+                    sentrixId = rep(b, length(dens$x)))
+  df <- rbind(df, tmp)
+  }
+}
+
+density <- df |> 
+  dplyr::filter(!is.na(x)) |> 
+  ggplot(aes(x = x,
+             y = y,
+             colour = interaction(sentrixId, sampletype),
+             group = interaction(sentrixId, sampletype))) +
+  geom_line(linewidth = 0.4, alpha = 0.2) +
+  scale_colour_manual(values = colorRampPalette(cols[c(1, 2, 6)])(404)) +
+  theme_minimal() +
+  theme(legend.position = "none",aspect.ratio = 0.5) +
+  facet_wrap(~sampletype,nrow = 1) +
+  labs(x = expression(beta), y = "density")
+
+# PCA plot ---------------------
+pca.sample <- pheno |> 
+  ggplot(aes(x = -PC1,
+             y = PC2,
+             colour = sampletype,
+             text = paste0("ic = ", ic, "\n",
+                            "sampletype = ", subjectId, visitId, sampletypeId))) + 
+  geom_point(alpha = 0.8,
+             size = 0.75) +
+  scale_colour_manual(values = cols[c(1,2,6)],
+                      name = "") +
+  theme_minimal() +
+  theme(legend.position = "top",
+        aspect.ratio = 1) +
+  labs(x = "PC1", y = "PC2")
+
+pca.ic <-pheno |> 
+  ggplot(aes(x = -PC1,
+             y = PC2,
+             colour = ic)) + 
+  geom_point(alpha = 0.8,
+             size = 0.75) +
+  scale_colour_gradientn(colours = cols[c(8, 1:3, 5, 4)],
+                      name = stringr::str_wrap("inferred immune cell proportion", width = 20)) +
+  theme_minimal() +
+  theme(legend.position = "top",
+        legend.key.width = unit(6, "mm"),
+        legend.key.height = unit(5, "mm"),
+        legend.text = element_text(colour = "grey40"),
+        aspect.ratio = 1) +
+  labs(x = "PC1", y = "PC2")
+
+# # umap 
+# set.seed(12345)
+# u <- uwot::umap(t(b), n_neighbors = 50)
+# pheno$umap1 <- u[,1]
+# pheno$umap2 <- u[,2]
+# 
+# p <- pheno |> 
+#   ggplot(aes(x = umap1,
+#              y = umap2,
+#              colour = sampletype,
+#              text = paste0("ic = ", ic, "\n",
+#                            "sampletype = ", subjectId, visitId, sampletypeId))) + 
+#   geom_point(alpha = 0.8) +
+#   scale_colour_manual(values = cols[c(1,2,6)],
+#                       name = "") +
+#   theme_minimal() +
+#   theme(legend.position = "top")
+# 
+# p1 <- pheno |> 
+#   ggplot(aes(x = umap1,
+#              y = umap2,
+#              colour = ic,
+#              text = paste0("ic = ", ic, "\n",
+#                            "sampletype = ", subjectId, visitId, sampletypeId))) + 
+#   geom_point(alpha = 0.8) +
+#   # scale_colour_manual(values = cols[c(1,2,6)],
+#   #                     name = "") +
+#   theme_minimal() +
+#   theme(legend.position = "top")
+# 
+# plotly::ggplotly(p)
+# plotly::ggplotly(p1)
+
+# PCA heatmap ----------------------------
+# append age info
+# Convert technical factors to numeric variables using one-hot encoding
+technical_factors <- pheno |> 
+  dplyr::left_join(dplyr::select(data, subjectId, age_at_consent, mpstatrs,  bmi_at_consent, smoking_ever), by = "subjectId") |> 
+  dplyr::select(interventionId, subjectId, visitId, sampletype, batch, plate, sample_well, ic, age_at_consent, bmi_at_consent, smoking_ever, mpstatrs) |> 
+  dplyr::mutate_if(is.character, as.factor)
+
+pcs <- pheno |> 
+  dplyr::select(PC1:PC10)
+
+pcaheat <- pcaHeatmap(pcs, technical_factors)
+
+pcaheat
+
+# SNP plots ------------------------------
+load(here(folder, "prep-scripts", "2-methylation", "2-report", "Log", "merged_rs.Rdata"))
+
+tmp <- pheno |> 
+  dplyr::filter(subjectId == "I004")
+
+# rstmp1 <- t(rs[,tmp$basename]) |> 
+#   as.data.frame() |> 
+#   tibble::rownames_to_column("basename") |> 
+#   pivot_longer(-c(basename), names_to = "rs", values_to = "value") |> 
+#   left_join(tmp) |> 
+#   dplyr::filter(visitId == "M0" & sampletype == "cervical") |> 
+#   dplyr::rename(base = value) |> 
+#   dplyr::select(rs, base)
+
+rstmp2 <- t(rs[,tmp$basename]) |> 
+  as.data.frame() |> 
+  tibble::rownames_to_column("basename") |> 
+  pivot_longer(-c(basename), names_to = "rs", values_to = "value") |> 
+  left_join(tmp) 
+
+# rstmp2 <- rstmp2 |> 
+#   left_join(rstmp1, by = "rs")
+
+# Panel
+snp <- rstmp2 |>
+  ggplot(aes(x = rs,
+             y = value,
+             colour = sampletype,
+             shape = visitId)) +
+  geom_point(alpha = 0.5, size = 2) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        aspect.ratio = 0.3,
+        panel.grid.major = element_blank(),
+        legend.position = "top",
+        legend.box = 'vertical',
+        legend.margin = margin(-7, 0, 0, 0),
+        axis.ticks.x = element_line(colour = "gray60", linewidth = 0.25)) +
+  labs(y = expression(beta), x = "SNP probes") +
+  scale_colour_manual(values = cols[c(1,2,6)],
+                      name = "Sample type") +
+  scale_shape_manual(values = 15:19,
+                     name = "visitId")
+
+# Age ------------------------------
+# append chron age
+load(here("processed", "pheno", "general", "data.Rdata"))
+pheno <- pheno |> 
+  dplyr::left_join(select(data,subjectId, age_at_consent), by = "subjectId")
+
+# compute WID general age
+library(WIDclocks)
+# identical(pheno$basename, colnames(beta_merged))
+pheno$WID_general_age <- WIDclocks::WID_clocks(beta_merged)$WID_general_clock
+
+# plot
+age <- pheno |>
+  dplyr::filter(visitId == "M0") |>
+  ggplot(aes(x = age_at_consent,
+             y = WID_general_age,
+             colour = sampletype)) +
+  geom_point(alpha = 0.6,
+             size = 1) +
+  geom_smooth(method = "lm") +
+  scale_colour_manual(values = cols[c(1,2,6)],
+                      name = "") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+              colour = "gray60") +
+  theme_minimal() +
+  theme(legend.position = "top",
+        aspect.ratio = 1) +
+  coord_cartesian(xlim = c(20, 80),
+                  ylim = c(20, 80)) +
+  labs(x = "Chronological age",
+       y = "Estimated age (WID-general clock)") +
+  # add regression equation
+  ggpubr::stat_regline_equation(aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                                formula = y ~ x,show.legend = F,label.y = c(21, 29, 25),
+                                label.x = 50)
+
+# Replication set ------------------------------
+load(here(folder, "processed", "pheno_replication.Rdata"))
+load("~/Dropbox/data/tirolgesund/beta_merged_replicate.Rdata")
+
+# remove sample with SNP mismatch
+pheno <- pheno_replication |> 
+  dplyr::filter(sampleId != "K042M4BS")
+
+ind <- match(pheno$basename, colnames(beta_merged))
+beta <- beta_merged[,ind]
+library(WIDclocks)
+res <- WIDclocks::WID_clocks(beta)
+pheno$WID_general_age <- res$WID_general_clock
+
+tmp1 <- pheno |> 
+  tidyr::pivot_wider(id_cols = c(sampletype, sampleId),
+                     names_from = rep,
+                     values_from = WID_general_age) |> 
+  dplyr::mutate(diff = paste0("diff = ", sd(`1`-`2`)))
+
+icc <- irr::icc(select(tmp1, `1`, `2`), model = "twoway", type = "agreement")
+
+prec <- tmp1 |> 
+  ggplot(aes(x = `1`,
+             y = `2`)) +
+  geom_point(size = 1.7, aes(
+             colour = sampleId,
+             shape = sampletype)) +
+  scale_colour_manual(values = colorRampPalette(cols)(15),
+                      name = "",
+                      guide = "none") +
+  scale_shape_manual(name = "",
+                     values = 15:17) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+              colour = "gray60") +
+  theme_minimal() +
+  theme(legend.position = "top",
+        aspect.ratio = 1,
+        axis.title.x = ggtext::element_markdown(),
+        axis.title.y = ggtext::element_markdown()) +
+  coord_cartesian(xlim = c(20, 80),
+                  ylim = c(20, 80)) +
+  labs(x = "<b>replicate 1</b><br>estimated age (WID-general clock)",
+       y = "<b>replicate 2</b><br>estimated age (WID-general clock)") +
+  geom_text(aes(x = 35,
+                y = 65,
+                label = paste0("ICC = ", signif(icc$value, 2))),
+            check_overlap = T,
+            colour = "gray40")
+
+
+# Exemplary beta correlation ----
+# extract S023M0CP
+tmp <- pheno |> dplyr::filter(sampleId == "S023M0CP")
+tmp2 <- as.data.frame(t(beta[,tmp$basename])) |> 
+  tibble::rownames_to_column("basename")
+tmp2 <- cbind(tmp, tmp2)
+tmp2 <- tmp2 |> 
+  tidyr::pivot_longer(rownames(beta),
+                      names_to = "probe",
+                      values_to = "beta") |> 
+  tidyr::pivot_wider(id_cols = c(sampleId, probe),
+                     names_from = "rep",
+                     values_from = beta)
+
+reps <- tmp2 |> 
+  ggplot(aes(x = `1`,
+             y = `2`)) +
+  stat_bin2d(bins = 700,
+             aes(fill = log(after_stat(density)))) +
+  scale_fill_gradientn(colours = cols[c(8, 1:3, 5, 4)],
+                       name = "log(density)") +
+  theme_minimal() +
+  theme(aspect.ratio = 1,
+        legend.position = "top",
+        axis.title.x = element_markdown(),
+        axis.title.y = element_markdown()) +
+  ggpubr::stat_cor() +
+  labs(x = "<b>replicate 1</b><br>β value",
+       y = "<b>replicate 2</b><br>β value") 
+
+
+# IC plots
+load(here("0-preprocessing/5-output/celltype_association.Rdata"))
+
+pheno_long <- pheno |>
+  tidyr::pivot_longer(contains("celltype"), names_to = 'type', values_to = 'prop') |> 
+  dplyr::mutate(type = gsub("celltype_", "", type)) |> 
+  dplyr::mutate(type = forcats::fct_reorder(type, prop))
+
+# labels <- unique(pheno_long$type)
+# names(labels) <- c("epithelial cells", "fibroblasts", "naive CD4 T cells",
+#                    "basophils", "memory CD4 T cells", "memory B cells", "naive B cells",
+#                    "regulatory T cells", "memory CD8 T cells", "naive CD8 T cells",
+#                    "eosinophils", "NK cells", "neutrophils", "monocytes")
+
+celltype <- pheno_long |> 
+  ggplot(aes(x = prop,
+             y = type)) +
+  geom_boxplot(outlier.shape = NA,
+               aes(colour = type,
+                   fill = type),
+               alpha = 0.3) +
+  ggbeeswarm::geom_quasirandom(size = 0.2, alpha = 0.1,
+                            aes(colour = type)) +
+  facet_wrap(~sampletype) +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  scale_fill_manual(values = pal(length(unique(pheno_long$type))),
+                    aesthetics = c("fill", "colour")) +
+  labs(x = 'Proportion', y = '')
+
+# Combine -------------------------
+ggsave(intensities, filename = "~/Dropbox/eca/tirolgesund/6-data-paper/figures/code/1-methylation/intensities.pdf",
+       width = 4.75, height = 4.75)
+
+ggsave(snp, filename =  "~/Dropbox/eca/tirolgesund/6-data-paper/figures/code/1-methylation/snp.pdf",
+       width = 6.5, height = 3)
+
+ggsave(density, filename = "~/Dropbox/eca/tirolgesund/6-data-paper/figures/code/1-methylation/densities.pdf",
+       width = 6.5, height = 3)
+
+ggsave(pca.sample, filename =  "~/Dropbox/eca/tirolgesund/6-data-paper/figures/code/1-methylation/pcasample.pdf",
+       width = 4.75, height = 4.75)
+
+ggsave(pca.ic, filename =  "~/Dropbox/eca/tirolgesund/6-data-paper/figures/code/1-methylation/pcaic.pdf",
+       width = 4.75, height = 4.75)
+
+pdf( "~/Dropbox/eca/tirolgesund/6-data-paper/figures/code/1-methylation/heatmap.pdf",
+    width = 3.25, height = 3.75)
+draw(heatmap)
+dev.off()
+
+ggsave(age, filename =  "~/Dropbox/eca/tirolgesund/6-data-paper/figures/code/1-methylation/age.pdf",
+       width = 4.75, height = 4.75)
+
+ggsave(prec, filename =  "~/Dropbox/eca/tirolgesund/6-data-paper /figures/code/1-methylation/prec.pdf",
+       width = 4.75, height = 4.75)
+
+ggsave(reps, filename =  "~/Dropbox/eca/tirolgesund/6-data-paper/figures/code/1-methylation/reps.pdf",
+       width = 4.75, height = 4.75,device = cairo_pdf)
+
+ggsave(celltype, filename = here("figures/panels/methylation-celltypes.pdf"),
+       width = 13, height = 3.75, device = cairo_pdf)
+
+```
+
+:::
+
+# Biomarkers
+
+::: {.panel-tabset}
+
+## Figure
+
+## Code
+
+```{r}
+# Biolearn data
+load('~/Dropbox/tg-data-prep/prep-scripts/11-preprocessed/3-epigenome/3-output/biolearn_full.Rdata')
+out_format <- out_format |> 
+  dplyr::rename(DNAmGrimAgeV2 = DNAmGrimAge,
+                AgeAccelGrimV2 = AgeAccelGrim)
+colN <- colnames(out_format) 
+
+
+# Eutops data
+load("data/data_raw.Rdata")
+load("data/vars.Rdata")
+varList <- vars |> dplyr::filter(grepl("methylation", assay)) |> 
+  dplyr::group_by(assay) |> 
+  dplyr::summarise(feature = list(x), .groups = 'drop') |> 
+  tibble::deframe()
+
+eutops <- as.data.frame(longForm(subsetByAssay(data, varList),
+                 colDataCols = c('basename_cervical', 'basename_buccal', 'basename_blood'))) |> 
+  tidyr::pivot_longer(contains("basename"),
+                      names_to = 'tissue',
+                      values_to = 'basename') |> 
+  dplyr::filter(!is.na(basename)) |> 
+  dplyr::mutate(tissue = gsub("basename_", "", tissue),
+                sample = gsub("Composite methylation scores: ", "", assay)) |> 
+  dplyr::filter(tissue == sample) |> 
+  dplyr::filter(!is.na(value)) |> 
+  tidyr::pivot_wider(names_from = 'rowname',
+                     values_from = 'value') |>  
+  dplyr::rename(Horvath = horvath) |> 
+  dplyr::select(any_of(colN)) |> 
+  dplyr::mutate(type = 'eutops') |> 
+  dplyr::distinct()
+
+# Variables
+vars <- intersect(colN, colnames(eutops))
+vars <- vars[!vars%in%c('basename', 'type')]
+
+
+full <- plyr::rbind.fill(out_format, eutops) |> 
+  tidyr::pivot_longer(any_of(vars),
+                      names_to = 'clock',
+                      values_to = 'value')|> 
+  tidyr::pivot_wider(names_from = 'type',
+                     values_from = 'value',
+                     id_cols = c("basename", "clock"))
+
+plot <- full |> 
+  dplyr::filter(!is.na(eutops) & !is.na(biolearn)) |> 
+  ggplot(aes(x = biolearn,
+             y = eutops)) +
+  geom_abline(slope = 1, intercept = 0,
+              colour = 'grey40',
+              linetype = 'dashed') +
+  geom_point(size = 1.2, alpha = 0.1,
+             col = cols[1]) +
+  facet_wrap(~clock, scales = 'free') +
+  ggpubr::stat_cor() +
+  theme_bw() +
+  theme(aspect.ratio = 0.6) +
+  labs(x = 'Clock values\n(computed with biolearn library)',
+       y = 'Clock values\n(computed independently)')
+  
+
+ggsave(plot,
+       filename = 'figures/Figure-S-Biomarkers.png',
+       width = 8,
+       height = 6.5,
+       dpi = 300)
+
+```
+

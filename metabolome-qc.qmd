@@ -1,0 +1,177 @@
+---
+title: "Metabolome QC Plots"
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+```{r}
+packages <- c('ggplot2', 'here', 'dplyr', 'ggtern', 'patchwork', 'viridis', 'purrr', 'ggnewscale', 
+              'MultiAssayExperiment')
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(here)
+library(viridis)
+library(MultiAssayExperiment)
+
+cols <- c("#1b69a1", "#48a0af", "#71b5a9", "#ec6669", "#f39668", "#bd647d", "#832c9b", "#5f70a8")
+
+here::i_am('methylation-qc.qmd')
+```
+
+::: {.panel-tabset}
+
+# Technical
+
+::: {.panel-tabset}
+
+## Figure
+
+![](figures/Figure-S2-Val-Meth.png)
+
+## Code
+
+### Metabolome
+
+
+```{r}
+# Metabolome
+# load pheno data
+db <- "~/Dropbox/tg-data-prep/"
+load(file.path(db, "processed", "metabolome", "pheno.Rdata"))
+
+# PC plots ----------------------------
+# load raw data
+load(file.path(db, "processed", "metabolome", "data-urine.Rdata"))
+
+# transform data and keep non-uniform columns (otherwise PCA Error)
+tmp <- data |>
+  t() |> 
+  as.data.frame() |> 
+  select_if(~ var(.) != 0)
+tmp <- tmp[match(pheno$sampleId, rownames(tmp)),]
+# identical(rownames(tmp), pheno$sampleId)
+
+pca <- prcomp(tmp, center = T, scale = T)
+# identical(pheno$sampleId, rownames(pca$x))
+pheno$PC1 <- pca$x[,1]
+pheno$PC2 <- pca$x[,2]
+
+# manually annotate metabolites 
+pheno <- pheno |> 
+  dplyr::mutate(metab = case_when(sampleId %in% c("S007M2UN",
+                                                  "K033M4UN",
+                                                  "S007M4UN",
+                                                  "I034M6UN") ~ "taurin",
+                                  sampleId %in% c("K022M0UN",
+                                                  "K052M2UN",
+                                                  "K006M2UN",
+                                                  "K041M0UN",
+                                                  "K043M6UN") ~ "erythrol",
+                                  sampleId %in% c("S035M0UN",
+                                                  "S004M0UN") ~ "ethanol",
+                                  sampleId %in% c("K053M6UN",
+                                                  "K053M4UN",
+                                                  "I001M6UN") ~ "mannitol",
+                                  grepl("QC", sampleId) ~ "QC",
+                                  sampleId %in% c("I056M6UN",
+                                                  "I053M4UN") ~ "other",
+                                  TRUE ~ NA))
+
+
+library(ggnewscale)
+
+pca.metab <- pheno |> 
+  dplyr::mutate(interventionId = ifelse(is.na(interventionId), "QC", interventionId),
+                interventionId = factor(interventionId, levels = c("QC", "I", "K", "S")),
+                typevar = ifelse(interventionId == "QC", "QC", "urine sample"),
+                metab = factor(metab, levels = c("QC",
+                                                 "erythrol",
+                                                 "ethanol",
+                                                 "mannitol",
+                                                 "taurin",
+                                                 "other"))) |> 
+# main plot
+  ggplot(aes(x = -PC1,
+             y = -PC2)) +
+  geom_point(alpha = 0.6,
+             aes(colour = typevar)) +
+  theme_minimal() +
+  scale_colour_manual(values = c(cols[1], "grey60"),
+                      name = "") +
+  labs(x = "PC1", y = "PC2") +
+  coord_cartesian(xlim = c(-100, 140),
+                  ylim = c(-120, 60)) +
+# add new scale
+  new_scale_color() +
+  ggforce::geom_mark_ellipse(aes(fill = metab,
+                                  label = metab,
+                                 colour = metab),
+                             con.size = c(rep(0.5, 6), 0),
+                             con.colour = cols[c(1, 5, 4, 7, 3, 6)],
+                             size = 0.25,
+                             na.rm = TRUE,
+                             show.legend = F,
+                             label.fontsize = 12) +
+   scale_colour_manual(values = cols[c(1, 5, 4, 7, 3, 6)],
+                       aesthetics = c("fill", "colour"),na.value = NA) +
+  theme(legend.position = "none",
+        aspect.ratio = 0.6,
+        axis.title = element_text(size = 13),
+        axis.text = element_text(size = 12))
+
+
+# NMR versus MS creatinine corr plot ------------------
+tmp <- readxl::read_xlsx("/Volumes/eutops/tirolgesund/raw-data/molecular/nmr/Vergleich Creatinin.xlsx") |> janitor::clean_names()
+
+corr.metab <- tmp |> 
+  dplyr::filter(!is.na(chenomx) & !is.na(kreatinin_mmol_l) & kreatinin_mmol_l < 40) |> 
+  ggplot(aes(x = kreatinin_mmol_l,
+             y = chenomx)) +
+  geom_point(alpha = 0.6) +
+  theme_minimal() +
+  theme(axis.title.x = ggtext::element_markdown(),
+        axis.title.y = ggtext::element_markdown(),
+        aspect.ratio = 1) +
+  geom_abline(intercept = 0,
+              slope = 1,
+              linetype = 'dashed',
+              colour = "gray60") +
+  ggpubr::stat_cor() +
+  labs(x = "<b>Creatinine [mmol/ml]</b><br><span style='color:#8c8c8c'>LC-MS<span>",
+       y = "<b>Creatinine [mmol/ml]</b><br><span style='color:#8c8c8c'>NMR<span>")
+
+# save ---------------------
+ggsave(pca.metab, filename = file.path("data-paper", "0-markdown", "2-metabolome", "pca.pdf"),
+       width = 8.5, height = 8.5)
+
+ggsave(corr.metab, filename = file.path("data-paper", "0-markdown", "2-metabolome", "corr-crea.pdf"),
+       width = 4.75, height = 4.75)
+
+```
+
+### Microbiome 
+
+:::
+

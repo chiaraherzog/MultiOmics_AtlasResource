@@ -1,0 +1,287 @@
+---
+title: "Figure 3 | MOWAS analysis"
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, eval = F)
+```
+
+![](figures/Fig-MOWAS.png)
+
+```{r libs, eval = F}
+packages <- c('ggplot2', 'here', 'dplyr', 'stringr', 'patchwork', 'ggrepel')
+
+for(p in packages){
+  if(!require(p,
+              character.only = T)){
+    try(install.packages(p),silent = T)
+    if(!require(p,
+                character.only = T)){
+      BiocManager::install(p)
+    } 
+  }
+}
+
+
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(here)
+
+here::i_am('mowas.qmd')
+source(here('source/plotMOWAS.R'))
+```
+
+This code generates graphs for figure 3. MOWAS analyses are run in `1-analyses/MOWAS/1-run-mowas.R`
+
+# Age
+
+```{r}
+age <- plotMOWAS(mowas = 'age')
+
+# Legend plot (only once)
+
+# Data frame for custom legend
+legend_data <- data.frame(
+  assay = names(age$cols),
+  color = age$cols
+)
+
+# Add row and column positions for a grid layout
+legend_data$row <- rep(1:2, each = ceiling(nrow(legend_data) / 2))[1:nrow(legend_data)]
+legend_data$col <- rep(1:ceiling(nrow(legend_data) / 2), times = 2)[1:nrow(legend_data)]
+
+
+# Create the custom legend plot
+legend_plot <- legend_data |> 
+  ggplot(aes(x = col, y = -row)) +
+  geom_point(aes(color = color), shape = 16, size = 4) +
+  geom_text(aes(label = assay), hjust = 0, nudge_x = 0.05, size = 3.2) +
+  xlim(0.8, max(legend_data$col) + 0.5) +
+  ylim(-2.5, -0.5) +  scale_color_identity() +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid = element_blank(),
+    legend.position = 'none'
+  )
+
+```
+
+# Menopause
+
+```{r}
+meno <- plotMOWAS('menopause', fdr.method = 'fdr', fdr = 0.1)
+```
+
+# BMI
+
+```{r}
+bmi <- plotMOWAS(mowas = 'bmi')
+```
+
+# Smoking current
+
+```{r}
+smk_cur <- plotMOWAS('smoking_curr')
+```
+
+# Smoking ever
+
+```{r}
+smk_ev <- plotMOWAS('smoking_ever')
+```
+
+# Vo2Max
+
+```{r}
+vo2max <- plotMOWAS(mowas = 'vo2max', fdr = 0.1, fdr.method = 'fdr')
+```
+
+# Activity
+
+```{r}
+activity <- plotMOWAS('activity', fdr = 0.05, fdr.method = 'fdr')
+```
+
+* activity not so interesting, highly correlated with VO2peak, power, etc.
+
+# Alcohol
+
+```{r}
+alcohol_units <- plotMOWAS('alcohol_units')
+
+# load("data/data_raw.Rdata")
+# 
+# experiments(data)
+# 
+# d <- longForm(data[,,4], colDataCols = c("visitId", "subjectId", "etohu_curr", "etoh_curr"))
+# d <- as.data.frame(d)
+# 
+# d |> dplyr::filter(rowname == 'tewl') |> 
+#   dplyr::mutate(etohu_curr_pseudonum = case_when(
+#     
+#     etohu_curr == 'no alcohol' ~ 0,
+#     etohu_curr == '1-3 units' ~ 2,
+#     etohu_curr == '11-15 units' ~ 13,
+#     etohu_curr == '16-20 units' ~ 18,
+#     etohu_curr == '4-6 units' ~ 5,
+#     etohu_curr == '7-10 units' ~ 8,
+#     etohu_curr == 'less than 1 unit' ~ 0.5,
+#     etohu_curr == 'no alcohol' ~ 0)) |> 
+#   ggplot(aes(x = etohu_curr_pseudonum,
+#              y = value)) +
+#   geom_point()
+# 
+# 
+# d |> dplyr::filter(rowname == 'tewl' & etoh_curr != 'unknown') |> 
+#   ggplot(aes(x = etoh_curr,
+#              y = value)) +
+#   geom_boxplot()
+
+```
+
+# Design 2
+
+```{r}
+design <- '
+BCDEFGH
+BCDEFGH
+AAAAAAA
+IJKLMNO
+IJKLMNO
+PQRSTUV
+PQRSTUV
+'
+
+plot <- (legend_plot + 
+           age$prop + 
+           (meno$prop&theme(axis.text.y = element_blank())) + 
+           (bmi$prop&theme(axis.text.y = element_blank())) +
+           (smk_cur$prop&theme(axis.text.y = element_blank())) +
+           (smk_ev$prop&theme(axis.text.y = element_blank())) + 
+           (vo2max$prop&theme(axis.text.y = element_blank())) + 
+           (alcohol_units$prop&theme(axis.text.y = element_blank())) + 
+             
+           
+           # 
+           
+           age$pie + meno$pie + bmi$pie + smk_cur$pie + smk_ev$pie + vo2max$pie + alcohol_units$pie +
+           
+           age$manh + meno$manh + bmi$manh + smk_cur$manh + smk_ev$manh +vo2max$manh + alcohol_units$manh) +
+  plot_layout(design = design) +
+  plot_annotation(tag_levels = 'a')
+
+pdf(here('out/mowas2.pdf'),width = 15,
+    height = 16)
+print(plot)
+dev.off()
+```
+
+# Design 5
+
+```{r}
+design <- '
+BCDEFGHIJKLMNO
+BCDEFGHIJKLMNO
+AAAAAAAAAAAAAA
+PPQQRRSSTTUUVV
+PPQQRRSSTTUUVV
+'
+
+plot <- (legend_plot + 
+           age$prop + age$column +
+           (meno$prop&theme(axis.text.y = element_blank())) +  meno$column +
+           (bmi$prop&theme(axis.text.y = element_blank())) + bmi$column +
+           (smk_cur$prop&theme(axis.text.y = element_blank())) + smk_cur$column +
+           (smk_ev$prop&theme(axis.text.y = element_blank())) + smk_ev$column +
+           (vo2max$prop&theme(axis.text.y = element_blank())) + vo2max$column +
+           (alcohol_units$prop&theme(axis.text.y = element_blank())) + alcohol_units$column +
+           
+           age$manh + meno$manh + bmi$manh + smk_cur$manh + smk_ev$manh +vo2max$manh + alcohol_units$manh) +
+  plot_layout(design = design)
+
+pdf(here('out/mowas5.pdf'),width = 21,
+    height = 15)
+print(plot)
+dev.off()
+
+# separate out the bottom bit
+plot <- (age$manh | meno$manh | bmi$manh | smk_cur$manh | smk_ev$manh |vo2max$manh | alcohol_units$manh)
+
+pdf(here('out/mowas5-bottom.pdf'),width = 15,
+    height = 7)
+print(plot)
+dev.off()
+```
+
+
+# Save outputs - Supplementary Table
+
+```{r}
+saveOutputsPortal <- function(object, name = ''){
+  
+  # Save plots for website
+  tmp1 <- object$df |> 
+    dplyr::filter(p.value < 0.05) |> 
+    dplyr::arrange(padj) |> 
+    dplyr::rename(sig_fdr = sig) |> 
+    dplyr::mutate(label = ifelse(is.na(label), var, label),
+                  mowas = name) |> 
+    dplyr::rename(layer = assay2,
+                  feature = label) |> 
+  dplyr::select(mowas, layer, feature, estimate, std.error, p.value, padj, sig_fdr)
+  
+  tmp <- list(prop = object$prop,
+              manh = object$manh,
+              df = tmp1)
+  
+  save(file = paste0("out/mowas_", name, ".Rdata"),
+       tmp)
+}
+
+saveOutputsPortal(age, 'age')
+saveOutputsPortal(bmi, 'bmi')
+saveOutputsPortal(smk_cur, 'smoking (current)')
+saveOutputsPortal(smk_ev, 'smoking (ever)')
+saveOutputsPortal(vo2max, 'VO2peak')
+saveOutputsPortal(meno, 'menopause')
+saveOutputsPortal(alcohol_units, 'alcohol units')
+
+
+# # Example plots
+# plotly::ggplotly(age$prop, tooltip = 'text')
+# plotly::ggplotly(age$manh,tooltip = 'text')
+
+
+# Export & Format Supplementary Table
+list <- list(age, bmi, smk_cur, smk_ev, alcohol_units, meno, vo2max)
+
+Suppl_MOWAS <- bind_rows(lapply(list, function(i){
+    i[['df']] |> 
+    dplyr::filter(p.value < 0.05) |> 
+      dplyr::arrange(padj) |> 
+    dplyr::rename(sig_fdr = sig) |> 
+      dplyr::mutate(label = ifelse(is.na(label), var, label)) |> 
+      dplyr::select(term, assay2, label, estimate, std.error, p.value, padj, sig_fdr)
+}), .id = 'mowas') |> 
+  dplyr::rename(layer = assay2,
+                feature = label) |> 
+  dplyr::mutate(mowas = case_match(mowas, 
+                                   "1" ~ 'age',
+                                   "2" ~ 'BMI',
+                                   "3" ~ 'smoking (current)',
+                                   "4" ~ 'smoking (ever)',
+                                   "5" ~ 'alcohol units',
+                                   "6" ~ 'menopause', 
+                                   "7" ~ 'vo2peak')) |> 
+  dplyr::select(mowas, layer, feature, estimate, std.error, p.value, padj, sig_fdr)
+
+writexl::write_xlsx(Suppl_MOWAS, path = 'out/Supplementary_MOWAS.xlsx')
+```
