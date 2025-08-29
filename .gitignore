@@ -13,7 +13,7 @@ figures/panels/*
 
 *.qs
 *.docx
-
+.Rbuildignore
 .DS_Store
 out/*
 
